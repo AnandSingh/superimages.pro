@@ -39,6 +39,107 @@ export type Database = {
         }
         Relationships: []
       }
+      media_assets: {
+        Row: {
+          created_at: string | null
+          filename: string | null
+          id: string
+          mime_type: string | null
+          type: string
+          url: string | null
+          whatsapp_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          filename?: string | null
+          id?: string
+          mime_type?: string | null
+          type: string
+          url?: string | null
+          whatsapp_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          filename?: string | null
+          id?: string
+          mime_type?: string | null
+          type?: string
+          url?: string | null
+          whatsapp_id?: string | null
+        }
+        Relationships: []
+      }
+      message_templates: {
+        Row: {
+          components: Json
+          created_at: string | null
+          id: string
+          language: string
+          name: string
+          status: string
+        }
+        Insert: {
+          components: Json
+          created_at?: string | null
+          id?: string
+          language: string
+          name: string
+          status: string
+        }
+        Update: {
+          components?: Json
+          created_at?: string | null
+          id?: string
+          language?: string
+          name?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      messages: {
+        Row: {
+          content: Json
+          created_at: string | null
+          direction: string
+          id: string
+          message_type: string
+          status: string | null
+          updated_at: string | null
+          user_id: string | null
+          whatsapp_message_id: string
+        }
+        Insert: {
+          content: Json
+          created_at?: string | null
+          direction: string
+          id?: string
+          message_type: string
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          whatsapp_message_id: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string | null
+          direction?: string
+          id?: string
+          message_type?: string
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          whatsapp_message_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_users: {
         Row: {
           created_at: string | null
