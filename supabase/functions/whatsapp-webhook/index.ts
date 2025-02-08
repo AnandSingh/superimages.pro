@@ -1,5 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,10 +47,87 @@ serve(async (req) => {
       return new Response('Forbidden', { status: 403 })
     }
 
-    // For now, just acknowledge POST requests
+    // Handle incoming messages and status updates
     if (req.method === 'POST') {
       const body = await req.json()
       console.log('Received webhook:', JSON.stringify(body, null, 2))
+
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      )
+
+      // Process messages
+      if (body.entry?.[0]?.changes?.[0]?.value?.messages) {
+        const message = body.entry[0].changes[0].value.messages[0]
+        const sender = body.entry[0].changes[0].value.contacts[0]
+        
+        // Create or update WhatsApp user
+        const { data: userData, error: userError } = await supabase
+          .from('whatsapp_users')
+          .upsert({
+            phone_number: sender.wa_id,
+            first_name: sender.profile?.name?.split(' ')[0],
+            last_name: sender.profile?.name?.split(' ').slice(1).join(' '),
+            last_active: new Date().toISOString()
+          }, {
+            onConflict: 'phone_number',
+            returning: true
+          })
+
+        if (userError) {
+          console.error('Error updating user:', userError)
+        }
+
+        // Store the message
+        const messageData = {
+          whatsapp_message_id: message.id,
+          user_id: userData?.[0]?.id,
+          direction: 'incoming',
+          message_type: message.type,
+          content: message,
+          status: 'received'
+        }
+
+        const { error: messageError } = await supabase
+          .from('messages')
+          .insert(messageData)
+
+        if (messageError) {
+          console.error('Error storing message:', messageError)
+        }
+
+        // Handle media messages
+        if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+          const { error: mediaError } = await supabase
+            .from('media_assets')
+            .insert({
+              whatsapp_id: message.image?.id || message.video?.id || message.document?.id,
+              type: message.type,
+              mime_type: message[message.type].mime_type,
+              filename: message.document?.filename
+            })
+
+          if (mediaError) {
+            console.error('Error storing media asset:', mediaError)
+          }
+        }
+      }
+
+      // Process status updates
+      if (body.entry?.[0]?.changes?.[0]?.value?.statuses) {
+        const status = body.entry[0].changes[0].value.statuses[0]
+        
+        const { error: statusError } = await supabase
+          .from('messages')
+          .update({ status: status.status, updated_at: new Date().toISOString() })
+          .eq('whatsapp_message_id', status.id)
+
+        if (statusError) {
+          console.error('Error updating message status:', statusError)
+        }
+      }
+
       return new Response('OK')
     }
 
