@@ -67,27 +67,51 @@ serve(async (req) => {
           .from('whatsapp_users')
           .upsert({
             phone_number: sender.wa_id,
-            first_name: sender.profile?.name?.split(' ')[0],
-            last_name: sender.profile?.name?.split(' ').slice(1).join(' '),
+            first_name: sender.profile?.name?.split(' ')[0] || null,
+            last_name: sender.profile?.name?.split(' ').slice(1).join(' ') || null,
             last_active: new Date().toISOString()
           }, {
-            onConflict: 'phone_number',
-            returning: true
+            onConflict: 'phone_number'
           })
 
         if (userError) {
           console.error('Error updating user:', userError)
+          throw userError
         }
 
-        // Store the message
+        // Get the user ID
+        const { data: userIdData, error: userIdError } = await supabase
+          .from('whatsapp_users')
+          .select('id')
+          .eq('phone_number', sender.wa_id)
+          .single()
+
+        if (userIdError) {
+          console.error('Error getting user ID:', userIdError)
+          throw userIdError
+        }
+
+        // Store the message with appropriate content based on type
+        let messageContent = {}
+        if (message.type === 'text') {
+          messageContent = {
+            text: message.text.body
+          }
+        } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+          messageContent = message[message.type]
+        }
+
         const messageData = {
           whatsapp_message_id: message.id,
-          user_id: userData?.[0]?.id,
+          user_id: userIdData.id,
           direction: 'incoming',
           message_type: message.type,
-          content: message,
-          status: 'received'
+          content: messageContent,
+          status: 'received',
+          created_at: new Date(parseInt(message.timestamp) * 1000).toISOString()
         }
+
+        console.log('Storing message:', messageData)
 
         const { error: messageError } = await supabase
           .from('messages')
@@ -95,6 +119,7 @@ serve(async (req) => {
 
         if (messageError) {
           console.error('Error storing message:', messageError)
+          throw messageError
         }
 
         // Handle media messages
@@ -110,6 +135,7 @@ serve(async (req) => {
 
           if (mediaError) {
             console.error('Error storing media asset:', mediaError)
+            throw mediaError
           }
         }
       }
@@ -125,10 +151,13 @@ serve(async (req) => {
 
         if (statusError) {
           console.error('Error updating message status:', statusError)
+          throw statusError
         }
       }
 
-      return new Response('OK')
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
     return new Response('Method not allowed', { status: 405 })
