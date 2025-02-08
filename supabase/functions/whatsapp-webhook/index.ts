@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -88,6 +89,8 @@ async function storeExpense(supabase: any, userId: string, expenseData: ExpenseD
 
 // Function to get expense summary with improved calculations
 async function getExpenseSummary(supabase: any, userId: string, timeframe: string = 'today') {
+  console.log(`Getting expense summary for user ${userId}, timeframe: ${timeframe}`);
+  
   const now = new Date();
   const startDate = new Date();
   
@@ -107,7 +110,7 @@ async function getExpenseSummary(supabase: any, userId: string, timeframe: strin
   }
 
   try {
-    // Fetch all expenses in the time range
+    // Fetch all expenses in the time range with a fresh query
     const { data: expenses, error } = await supabase
       .from('expenses')
       .select('amount, category, description')
@@ -115,25 +118,27 @@ async function getExpenseSummary(supabase: any, userId: string, timeframe: strin
       .gte('date', startDate.toISOString())
       .lte('date', now.toISOString());
 
-    if (error) throw error;
+    console.log('Fetched expenses:', expenses);
+
+    if (error) {
+      console.error('Error fetching expenses:', error);
+      throw error;
+    }
 
     if (!expenses || expenses.length === 0) {
       return `No expenses found for ${timeframe}.`;
     }
 
     // Initialize totals for all possible categories
-    const categories = {
-      groceries: 0,
-      restaurant: 0,
-      entertainment: 0,
-      transport: 0,
-      utilities: 0,
-      shopping: 0,
-      other: 0
+    const categories: Record<string, { total: number; items: { description: string; amount: number }[] }> = {
+      groceries: { total: 0, items: [] },
+      restaurant: { total: 0, items: [] },
+      entertainment: { total: 0, items: [] },
+      transport: { total: 0, items: [] },
+      utilities: { total: 0, items: [] },
+      shopping: { total: 0, items: [] },
+      other: { total: 0, items: [] }
     };
-
-    // Track items in "other" category for detailed breakdown
-    const otherItems: { description: string; amount: number }[] = [];
 
     // Calculate totals
     let total = 0;
@@ -141,34 +146,37 @@ async function getExpenseSummary(supabase: any, userId: string, timeframe: strin
       const amount = Number(exp.amount);
       total += amount;
 
-      if (exp.category === 'other') {
-        otherItems.push({
-          description: exp.description || 'Unspecified',
-          amount: amount
-        });
+      const category = exp.category as keyof typeof categories;
+      if (categories[category]) {
+        categories[category].total += amount;
+        if (exp.description) {
+          categories[category].items.push({
+            description: exp.description,
+            amount: amount
+          });
+        }
       }
-      
-      categories[exp.category as keyof typeof categories] += amount;
     });
 
     // Build the response message
     let summary = `Total expenses for ${timeframe}: $${total.toFixed(2)}\n\nBreakdown by category:`;
     
     // Add each category with non-zero amount
-    Object.entries(categories).forEach(([category, amount]) => {
-      if (amount > 0) {
-        summary += `\n${category.charAt(0).toUpperCase() + category.slice(1)}: $${amount.toFixed(2)}`;
+    Object.entries(categories).forEach(([category, data]) => {
+      if (data.total > 0) {
+        summary += `\n${category.charAt(0).toUpperCase() + category.slice(1)}: $${data.total.toFixed(2)}`;
         
-        // Add detailed breakdown for "other" category
-        if (category === 'other' && otherItems.length > 0) {
+        // Add detailed breakdown for "other" category or categories with multiple items
+        if (data.items.length > 0) {
           summary += '\n  Includes:';
-          otherItems.forEach(item => {
+          data.items.forEach(item => {
             summary += `\n  - ${item.description}: $${item.amount.toFixed(2)}`;
           });
         }
       }
     });
 
+    console.log('Generated summary:', summary);
     return summary;
   } catch (error) {
     console.error('Error getting expense summary:', error);
