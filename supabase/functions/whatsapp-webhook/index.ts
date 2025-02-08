@@ -178,23 +178,15 @@ serve(async (req) => {
           try {
             console.log('Generating AI response for:', message.text.body)
             
-            const chat = model.startChat({
-              history: [
-                {
-                  role: "user",
-                  parts: "You are a helpful WhatsApp business assistant. Keep responses concise and friendly. Format using simple text only, no markdown or special formatting."
-                },
-                {
-                  role: "model",
-                  parts: "I understand. I'll act as a helpful WhatsApp business assistant, keeping my responses concise, friendly, and in plain text format."
-                }
-              ],
-              generationConfig: {
-                maxOutputTokens: 200,
-              },
+            // Generate content using Gemini AI
+            const result = await model.generateContent({
+              contents: [{
+                parts: [{
+                  text: `You are a helpful WhatsApp business assistant. Keep responses concise and friendly. Here's the user's message: ${message.text.body}`
+                }]
+              }]
             });
-
-            const result = await chat.sendMessage(message.text.body);
+            
             const response = await result.response;
             const aiResponse = response.text();
             
@@ -225,6 +217,7 @@ serve(async (req) => {
 
           } catch (error) {
             console.error('Error generating or sending AI response:', error)
+            throw error
           }
         }
       }
