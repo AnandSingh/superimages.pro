@@ -65,7 +65,7 @@ Example response for querying:
 }`;
 
   const result = await model.generateContent([
-    { role: "user", parts: [{ text: prompt }] }
+    { text: prompt }
   ]);
   
   const response = await result.response;
