@@ -151,7 +151,12 @@ async function sendWhatsAppMessage(to: string, message: string) {
 
 serve(async (req) => {
   const url = new URL(req.url)
-  console.log(`${req.method} ${url.pathname} - Query params:`, Object.fromEntries(url.searchParams))
+  console.log('Incoming request:', {
+    method: req.method,
+    pathname: url.pathname,
+    searchParams: Object.fromEntries(url.searchParams),
+    headers: Object.fromEntries(req.headers)
+  })
 
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -170,11 +175,12 @@ serve(async (req) => {
       const token = url.searchParams.get('hub.verify_token')
       const challenge = url.searchParams.get('hub.challenge')
 
-      console.log('Verification request received:', {
+      console.log('Verification request details:', {
         mode,
         token: token ? '[REDACTED]' : undefined,
         challenge,
-        pathname: url.pathname
+        pathname: url.pathname,
+        allParams: Object.fromEntries(url.searchParams)
       })
 
       const storedToken = Deno.env.get('WHATSAPP_VERIFY_TOKEN')
@@ -186,27 +192,45 @@ serve(async (req) => {
         })
       }
 
-      // Log verification attempt details (without exposing the actual token)
-      console.log('Verification check:', {
-        modeMatch: mode === 'subscribe',
+      if (mode !== 'subscribe') {
+        console.error('Invalid mode:', mode)
+        return new Response('Invalid mode', { 
+          status: 403,
+          headers: corsHeaders
+        })
+      }
+
+      if (!token) {
+        console.error('Missing verify token in request')
+        return new Response('Missing verify token', { 
+          status: 403,
+          headers: corsHeaders
+        })
+      }
+
+      if (!challenge) {
+        console.error('Missing challenge in request')
+        return new Response('Missing challenge', { 
+          status: 403,
+          headers: corsHeaders
+        })
+      }
+
+      console.log('Token validation:', {
+        storedTokenLength: storedToken.length,
+        receivedTokenLength: token.length,
         tokenMatch: token === storedToken,
-        hasChallenge: !!challenge,
-        pathname: url.pathname
+        tokensEqual: token === storedToken
       })
 
-      if (mode === 'subscribe' && token === storedToken) {
-        console.log('Webhook verified successfully')
+      if (token === storedToken) {
+        console.log('Webhook verified successfully with challenge:', challenge)
         return new Response(challenge, {
           headers: { ...corsHeaders, 'Content-Type': 'text/plain' },
         })
       }
 
-      console.error('Verification failed:', {
-        mode,
-        tokenMatch: token === storedToken,
-        hasChallenge: !!challenge,
-        pathname: url.pathname
-      })
+      console.error('Token mismatch')
       return new Response('Forbidden', { 
         status: 403,
         headers: corsHeaders
