@@ -33,141 +33,8 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
   }).join('\n');
 }
 
-// Function to analyze message intent using AI
-async function analyzeMessageIntent(message: string, model: any) {
-  console.log('Analyzing message intent for:', message);
-  
-  const prompt = `You are an expense tracking assistant. Analyze this message and classify it:
-"${message}"
-
-Respond in JSON format with these fields:
-- intent: One of RECORD_EXPENSE, QUERY_EXPENSES, MODIFY_EXPENSE, or OTHER
-- details: For RECORD_EXPENSE include amount, category (one of: groceries, restaurant, entertainment, transport, utilities, shopping, other), description, date
-- queryParams: For QUERY_EXPENSES include timeFrame, category (optional), queryType (total or breakdown)
-
-Example response for expense recording:
-{
-  "intent": "RECORD_EXPENSE",
-  "details": {
-    "amount": 50.00,
-    "category": "groceries",
-    "description": "weekly shopping",
-    "date": "2024-03-19"
-  }
-}
-
-Example response for querying:
-{
-  "intent": "QUERY_EXPENSES",
-  "queryParams": {
-    "timeFrame": "last_week",
-    "category": null,
-    "queryType": "total"
-  }
-}`;
-
-  console.log('Sending prompt to Gemini:', prompt);
-
-  const result = await model.generateContent([
-    { text: prompt }
-  ]);
-  
-  const response = await result.response;
-  console.log('Raw Gemini response:', response.text());
-  
-  try {
-    const parsedResponse = JSON.parse(response.text());
-    console.log('Successfully parsed response:', parsedResponse);
-    return parsedResponse;
-  } catch (error) {
-    console.error('Error parsing AI response:', error);
-    console.error('Raw response that failed parsing:', response.text());
-    return { intent: 'OTHER' };
-  }
-}
-
-// Function to handle expense queries
-async function handleExpenseQuery(supabase: any, userId: string, queryParams: any) {
-  const { timeFrame, category, queryType } = queryParams;
-  
-  let timeFilter = 'NOW() - INTERVAL \'1 week\'';
-  if (timeFrame === 'this_month') timeFilter = 'DATE_TRUNC(\'month\', NOW())';
-  else if (timeFrame === 'last_month') timeFilter = 'DATE_TRUNC(\'month\', NOW() - INTERVAL \'1 month\')';
-  
-  let query = supabase
-    .from('expenses')
-    .select(queryType === 'total' ? 'amount' : 'amount, category, date, description')
-    .eq('user_id', userId)
-    .gte('date', timeFilter);
-    
-  if (category) {
-    query = query.eq('category', category);
-  }
-  
-  const { data: expenses, error } = await query;
-  
-  if (error) {
-    console.error('Error querying expenses:', error);
-    return 'Sorry, I encountered an error while fetching your expenses.';
-  }
-  
-  if (queryType === 'total') {
-    const total = expenses.reduce((sum: number, exp: any) => sum + exp.amount, 0);
-    return `Your total expenses for the period: $${total.toFixed(2)}`;
-  } else {
-    const breakdown = expenses.reduce((acc: any, exp: any) => {
-      acc[exp.category] = (acc[exp.category] || 0) + exp.amount;
-      return acc;
-    }, {});
-    
-    let response = `Here's your expense breakdown:\n`;
-    Object.entries(breakdown).forEach(([category, amount]) => {
-      response += `${category}: $${(amount as number).toFixed(2)}\n`;
-    });
-    return response;
-  }
-}
-
-// Function to record an expense
-async function recordExpense(supabase: any, userId: string, details: any) {
-  const { amount, category, description, date } = details;
-  
-  const { error } = await supabase
-    .from('expenses')
-    .insert({
-      user_id: userId,
-      amount,
-      category,
-      description,
-      date: date || new Date().toISOString()
-    });
-    
-  if (error) {
-    console.error('Error recording expense:', error);
-    return 'Sorry, I encountered an error while recording your expense.';
-  }
-  
-  return `✅ Recorded expense: $${amount.toFixed(2)} for ${category}${description ? ` (${description})` : ''}`;
-}
-
-// Function to format AI response based on intent analysis
-async function handleIntentResponse(supabase: any, userId: string, intentData: any) {
-  console.log('Handling intent response:', intentData);
-  
-  switch (intentData.intent) {
-    case 'RECORD_EXPENSE':
-      console.log('Recording expense with details:', intentData.details);
-      return await recordExpense(supabase, userId, intentData.details);
-    case 'QUERY_EXPENSES':
-      console.log('Querying expenses with params:', intentData.queryParams);
-      return await handleExpenseQuery(supabase, userId, intentData.queryParams);
-    default:
-      console.log('No specific intent detected, sending welcome message');
-      return 'I can help you track expenses. Try saying something like "Spent $50 on groceries" or "How much did I spend last week?"';
-  }
-}
-
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -180,31 +47,39 @@ serve(async (req) => {
   })
 
   try {
-    // Test endpoint handling
+    // Test endpoint to verify the function is accessible
     if (url.pathname === '/test') {
+      console.log('Test endpoint called')
       return new Response(JSON.stringify({ status: 'ok', message: 'Webhook is operational' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Verification request handling
+    // Handle verification request
     if (req.method === 'GET') {
       const mode = url.searchParams.get('hub.mode')
       const token = url.searchParams.get('hub.verify_token')
       const challenge = url.searchParams.get('hub.challenge')
 
+      console.log('Verification request:', { mode, token, challenge })
+
       if (mode === 'subscribe' && token === Deno.env.get('WHATSAPP_VERIFY_TOKEN')) {
+        console.log('Verification successful, returning challenge:', challenge)
         return new Response(challenge)
       }
+
+      console.log('Verification failed')
       return new Response('Forbidden', { status: 403 })
     }
 
-    // Initialize clients
+    // Initialize Supabase client
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
-    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
+
+    // Initialize Gemini AI with 2.0-flash model
+    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? '');
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     // Function to send WhatsApp message
@@ -235,48 +110,15 @@ serve(async (req) => {
       return result;
     }
 
-    // Handle incoming webhook
+    // Handle incoming messages and status updates
     if (req.method === 'POST') {
       const body = await req.json()
       console.log('Received webhook:', JSON.stringify(body, null, 2))
 
-      const entry = body.entry?.[0]
-      const value = entry?.changes?.[0]?.value
-
-      if (!value) {
-        console.log('No value in webhook payload')
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      }
-
-      // Handle message status updates
-      if (value.statuses) {
-        console.log('Processing status update')
-        const status = value.statuses[0]
-        
-        const { error: statusError } = await supabase
-          .from('messages')
-          .update({ 
-            status: status.status, 
-            updated_at: new Date().toISOString() 
-          })
-          .eq('whatsapp_message_id', status.id)
-
-        if (statusError) {
-          console.error('Error updating message status:', statusError)
-        }
-
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      }
-
-      // Handle new messages
-      if (value.messages && value.contacts) {
-        console.log('Processing new message')
-        const message = value.messages[0]
-        const sender = value.contacts[0]
+      // Process messages
+      if (body.entry?.[0]?.changes?.[0]?.value?.messages) {
+        const message = body.entry[0].changes[0].value.messages[0]
+        const sender = body.entry[0].changes[0].value.contacts[0]
         
         // Create or update WhatsApp user
         const { data: userData, error: userError } = await supabase
@@ -307,64 +149,101 @@ serve(async (req) => {
           throw userIdError
         }
 
-        // Handle text messages for expense tracking
+        // Store the message with appropriate content based on type
+        let messageContent = {}
+        if (message.type === 'text') {
+          messageContent = {
+            text: message.text.body
+          }
+        } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+          messageContent = message[message.type]
+        }
+
+        const messageData = {
+          whatsapp_message_id: message.id,
+          user_id: userIdData.id,
+          direction: 'incoming',
+          message_type: message.type,
+          content: messageContent,
+          status: 'received',
+          created_at: new Date(parseInt(message.timestamp) * 1000).toISOString()
+        }
+
+        console.log('Storing message:', messageData)
+
+        const { error: messageError } = await supabase
+          .from('messages')
+          .insert(messageData)
+
+        if (messageError) {
+          console.error('Error storing message:', messageError)
+          throw messageError
+        }
+
+        // Handle media messages
+        if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+          const { error: mediaError } = await supabase
+            .from('media_assets')
+            .insert({
+              whatsapp_id: message.image?.id || message.video?.id || message.document?.id,
+              type: message.type,
+              mime_type: message[message.type].mime_type,
+              filename: message.document?.filename
+            })
+
+          if (mediaError) {
+            console.error('Error storing media asset:', mediaError)
+            throw mediaError
+          }
+        }
+
+        // Generate AI response for text messages
         if (message.type === 'text') {
           try {
-            // Check if this message has already been processed
-            const { data: existingMessage } = await supabase
-              .from('messages')
-              .select('id')
-              .eq('whatsapp_message_id', message.id)
-              .single()
-
-            if (existingMessage) {
-              console.log('Message already processed, skipping:', message.id)
-              return new Response(JSON.stringify({ success: true }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-              })
-            }
-
-            // Analyze message intent
-            console.log('Starting intent analysis for message:', message.text.body);
-            const intentAnalysis = await analyzeMessageIntent(message.text.body, model);
-            console.log('Intent analysis result:', intentAnalysis);
+            console.log('Generating AI response for:', message.text.body)
             
-            // Store the message with intent and parsed data
-            const messageData = {
-              whatsapp_message_id: message.id,
-              user_id: userIdData.id,
-              direction: 'incoming',
-              message_type: message.type,
-              content: { text: message.text.body },
-              intent: intentAnalysis.intent,
-              parsed_data: intentAnalysis,
-              status: 'received',
-              created_at: new Date(parseInt(message.timestamp) * 1000).toISOString()
-            }
-
-            const { error: messageError } = await supabase
-              .from('messages')
-              .insert(messageData)
-
-            if (messageError) {
-              console.error('Error storing message:', messageError)
-              throw messageError
-            }
-
-            // Generate and send response based on intent
-            const response = await handleIntentResponse(supabase, userIdData.id, intentAnalysis);
-            console.log('Generated response:', response);
+            // Get conversation history
+            const conversationHistory = await getConversationHistory(supabase, userIdData.id);
+            console.log('Retrieved conversation history:', conversationHistory);
             
-            // Send response via WhatsApp
-            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, response);
+            // Construct improved prompt with conversation history
+            const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
+
+Previous conversation:
+${conversationHistory}
+
+Current message:
+User: ${message.text.body}
+
+Important instructions:
+- Use the conversation history to maintain context
+- Don't mention that you're a chatbot or AI assistant
+- Don't say you can't remember - use the conversation history provided
+- Respond naturally as if you were in an ongoing conversation
+- Keep responses brief and to the point`;
             
-            // Store AI response
+            // Generate content using Gemini AI
+            const result = await model.generateContent({
+              contents: [{
+                parts: [{ text: prompt }]
+              }]
+            });
+            
+            const response = await result.response;
+            const aiResponse = response.text();
+            
+            console.log('AI generated response:', aiResponse)
+
+            // Send AI response back via WhatsApp
+            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
+            
+            // Store AI response in database
             const aiMessageData = {
               whatsapp_message_id: whatsappResponse.messages[0].id,
               user_id: userIdData.id,
               direction: 'outgoing',
               message_type: 'text',
-              content: { text: response },
+              content: { text: aiResponse },
               status: 'sent',
               created_at: new Date().toISOString()
             }
@@ -379,10 +258,24 @@ serve(async (req) => {
             }
 
           } catch (error) {
-            console.error('Error processing message:', error)
-            console.error('Error stack:', error.stack)
+            console.error('Error generating or sending AI response:', error)
             throw error
           }
+        }
+      }
+
+      // Process status updates
+      if (body.entry?.[0]?.changes?.[0]?.value?.statuses) {
+        const status = body.entry[0].changes[0].value.statuses[0]
+        
+        const { error: statusError } = await supabase
+          .from('messages')
+          .update({ status: status.status, updated_at: new Date().toISOString() })
+          .eq('whatsapp_message_id', status.id)
+
+        if (statusError) {
+          console.error('Error updating message status:', statusError)
+          throw statusError
         }
       }
 
@@ -394,7 +287,6 @@ serve(async (req) => {
     return new Response('Method not allowed', { status: 405 })
   } catch (error) {
     console.error('Error processing request:', error)
-    console.error('Error stack:', error.stack)
     return new Response(JSON.stringify({ error: 'Internal server error' }), { 
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
