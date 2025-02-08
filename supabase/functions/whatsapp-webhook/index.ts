@@ -1,6 +1,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,15 +48,48 @@ serve(async (req) => {
       return new Response('Forbidden', { status: 403 })
     }
 
+    // Initialize Supabase client
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
+
+    // Initialize Gemini AI
+    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? '');
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+    // Function to send WhatsApp message
+    async function sendWhatsAppMessage(recipient: string, text: string) {
+      const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
+      const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+
+      const response = await fetch(
+        `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: recipient,
+            type: 'text',
+            text: { body: text }
+          }),
+        }
+      );
+
+      const result = await response.json();
+      console.log('WhatsApp API response:', result);
+      return result;
+    }
+
     // Handle incoming messages and status updates
     if (req.method === 'POST') {
       const body = await req.json()
       console.log('Received webhook:', JSON.stringify(body, null, 2))
-
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-      )
 
       // Process messages
       if (body.entry?.[0]?.changes?.[0]?.value?.messages) {
@@ -136,6 +170,61 @@ serve(async (req) => {
           if (mediaError) {
             console.error('Error storing media asset:', mediaError)
             throw mediaError
+          }
+        }
+
+        // Generate AI response for text messages
+        if (message.type === 'text') {
+          try {
+            console.log('Generating AI response for:', message.text.body)
+            
+            const chat = model.startChat({
+              history: [
+                {
+                  role: "user",
+                  parts: "You are a helpful WhatsApp business assistant. Keep responses concise and friendly. Format using simple text only, no markdown or special formatting."
+                },
+                {
+                  role: "model",
+                  parts: "I understand. I'll act as a helpful WhatsApp business assistant, keeping my responses concise, friendly, and in plain text format."
+                }
+              ],
+              generationConfig: {
+                maxOutputTokens: 200,
+              },
+            });
+
+            const result = await chat.sendMessage(message.text.body);
+            const response = await result.response;
+            const aiResponse = response.text();
+            
+            console.log('AI generated response:', aiResponse)
+
+            // Send AI response back via WhatsApp
+            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
+            
+            // Store AI response in database
+            const aiMessageData = {
+              whatsapp_message_id: whatsappResponse.messages[0].id,
+              user_id: userIdData.id,
+              direction: 'outgoing',
+              message_type: 'text',
+              content: { text: aiResponse },
+              status: 'sent',
+              created_at: new Date().toISOString()
+            }
+
+            const { error: aiMessageError } = await supabase
+              .from('messages')
+              .insert(aiMessageData)
+
+            if (aiMessageError) {
+              console.error('Error storing AI message:', aiMessageError)
+              throw aiMessageError
+            }
+
+          } catch (error) {
+            console.error('Error generating or sending AI response:', error)
           }
         }
       }
