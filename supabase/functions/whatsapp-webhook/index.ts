@@ -207,8 +207,8 @@ serve(async (req) => {
             const conversationHistory = await getConversationHistory(supabase, userIdData.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
-            // Construct prompt with conversation history
-            const prompt = `You are a helpful WhatsApp business assistant. Keep responses concise and friendly.
+            // Construct improved prompt with conversation history
+            const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
 
 Previous conversation:
 ${conversationHistory}
@@ -216,7 +216,12 @@ ${conversationHistory}
 Current message:
 User: ${message.text.body}
 
-Please respond in a natural, conversational way while maintaining context from the previous messages.`;
+Important instructions:
+- Use the conversation history to maintain context
+- Don't mention that you're a chatbot or AI assistant
+- Don't say you can't remember - use the conversation history provided
+- Respond naturally as if you were in an ongoing conversation
+- Keep responses brief and to the point`;
             
             // Generate content using Gemini AI
             const result = await model.generateContent({
