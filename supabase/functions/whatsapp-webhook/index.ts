@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -221,14 +222,48 @@ serve(async (req) => {
       return result;
     }
 
-    // Handle incoming messages
+    // Handle incoming webhook
     if (req.method === 'POST') {
       const body = await req.json()
       console.log('Received webhook:', JSON.stringify(body, null, 2))
 
-      if (body.entry?.[0]?.changes?.[0]?.value?.messages) {
-        const message = body.entry[0].changes[0].value.messages[0]
-        const sender = body.entry[0].changes[0].value.contacts[0]
+      const entry = body.entry?.[0]
+      const value = entry?.changes?.[0]?.value
+
+      if (!value) {
+        console.log('No value in webhook payload')
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Handle message status updates
+      if (value.statuses) {
+        console.log('Processing status update')
+        const status = value.statuses[0]
+        
+        const { error: statusError } = await supabase
+          .from('messages')
+          .update({ 
+            status: status.status, 
+            updated_at: new Date().toISOString() 
+          })
+          .eq('whatsapp_message_id', status.id)
+
+        if (statusError) {
+          console.error('Error updating message status:', statusError)
+        }
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Handle new messages
+      if (value.messages && value.contacts) {
+        console.log('Processing new message')
+        const message = value.messages[0]
+        const sender = value.contacts[0]
         
         // Create or update WhatsApp user
         const { data: userData, error: userError } = await supabase
@@ -262,6 +297,20 @@ serve(async (req) => {
         // Handle text messages for expense tracking
         if (message.type === 'text') {
           try {
+            // Check if this message has already been processed
+            const { data: existingMessage } = await supabase
+              .from('messages')
+              .select('id')
+              .eq('whatsapp_message_id', message.id)
+              .single()
+
+            if (existingMessage) {
+              console.log('Message already processed, skipping:', message.id)
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+
             // Analyze message intent
             const intentAnalysis = await analyzeMessageIntent(message.text.body, model);
             console.log('Intent analysis:', intentAnalysis);
@@ -319,21 +368,6 @@ serve(async (req) => {
             console.error('Error processing message:', error)
             throw error
           }
-        }
-      }
-
-      // Process status updates
-      if (body.entry?.[0]?.changes?.[0]?.value?.statuses) {
-        const status = body.entry[0].changes[0].value.statuses[0]
-        
-        const { error: statusError } = await supabase
-          .from('messages')
-          .update({ status: status.status, updated_at: new Date().toISOString() })
-          .eq('whatsapp_message_id', status.id)
-
-        if (statusError) {
-          console.error('Error updating message status:', statusError)
-          throw statusError
         }
       }
 
