@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -52,7 +51,6 @@ interface AIResponse {
 
 function parseAIResponse(aiResponse: string): AIResponse | null {
   try {
-    // Extract JSON between ```json and ``` markers
     const jsonMatch = aiResponse.match(/```json\n([\s\S]*?)\n```/);
     if (!jsonMatch) {
       console.error('No JSON found in AI response');
@@ -88,12 +86,13 @@ async function storeExpense(supabase: any, userId: string, expenseData: ExpenseD
   }
 }
 
-// Function to get expense summary
+// Function to get expense summary with improved calculations
 async function getExpenseSummary(supabase: any, userId: string, timeframe: string = 'today') {
   const now = new Date();
   const startDate = new Date();
   
-  switch (timeframe) {
+  // Set time range based on query
+  switch (timeframe.toLowerCase()) {
     case 'today':
       startDate.setHours(0, 0, 0, 0);
       break;
@@ -104,13 +103,14 @@ async function getExpenseSummary(supabase: any, userId: string, timeframe: strin
       startDate.setMonth(now.getMonth() - 1);
       break;
     default:
-      startDate.setHours(0, 0, 0, 0);
+      startDate.setHours(0, 0, 0, 0); // Default to today
   }
 
   try {
+    // Fetch all expenses in the time range
     const { data: expenses, error } = await supabase
       .from('expenses')
-      .select('amount, category')
+      .select('amount, category, description')
       .eq('user_id', userId)
       .gte('date', startDate.toISOString())
       .lte('date', now.toISOString());
@@ -121,16 +121,53 @@ async function getExpenseSummary(supabase: any, userId: string, timeframe: strin
       return `No expenses found for ${timeframe}.`;
     }
 
-    const total = expenses.reduce((sum: number, exp: any) => sum + Number(exp.amount), 0);
-    const byCategory = expenses.reduce((acc: any, exp: any) => {
-      acc[exp.category] = (acc[exp.category] || 0) + Number(exp.amount);
-      return acc;
-    }, {});
+    // Initialize totals for all possible categories
+    const categories = {
+      groceries: 0,
+      restaurant: 0,
+      entertainment: 0,
+      transport: 0,
+      utilities: 0,
+      shopping: 0,
+      other: 0
+    };
 
+    // Track items in "other" category for detailed breakdown
+    const otherItems: { description: string; amount: number }[] = [];
+
+    // Calculate totals
+    let total = 0;
+    expenses.forEach((exp: any) => {
+      const amount = Number(exp.amount);
+      total += amount;
+
+      if (exp.category === 'other') {
+        otherItems.push({
+          description: exp.description || 'Unspecified',
+          amount: amount
+        });
+      }
+      
+      categories[exp.category as keyof typeof categories] += amount;
+    });
+
+    // Build the response message
     let summary = `Total expenses for ${timeframe}: $${total.toFixed(2)}\n\nBreakdown by category:`;
-    for (const [category, amount] of Object.entries(byCategory)) {
-      summary += `\n${category}: $${(amount as number).toFixed(2)}`;
-    }
+    
+    // Add each category with non-zero amount
+    Object.entries(categories).forEach(([category, amount]) => {
+      if (amount > 0) {
+        summary += `\n${category.charAt(0).toUpperCase() + category.slice(1)}: $${amount.toFixed(2)}`;
+        
+        // Add detailed breakdown for "other" category
+        if (category === 'other' && otherItems.length > 0) {
+          summary += '\n  Includes:';
+          otherItems.forEach(item => {
+            summary += `\n  - ${item.description}: $${item.amount.toFixed(2)}`;
+          });
+        }
+      }
+    });
 
     return summary;
   } catch (error) {
@@ -227,7 +264,6 @@ serve(async (req) => {
 
         // Generate AI response for text messages
         if (message.type === 'text') {
-          // Get conversation history
           const conversationHistory = await getConversationHistory(supabase, userIdData.id);
           
           const prompt = `You are a helpful WhatsApp expense tracking assistant. Format your entire response as a JSON object with this structure:
@@ -247,7 +283,7 @@ serve(async (req) => {
 
 Rules:
 1. If the user mentions spending money: set type="expense" and include expenseData
-2. If the user asks about their spending: set type="query"
+2. If the user asks about their spending or mentions "total": set type="query"
 3. For general conversation: set type="conversation"
 4. The "message" field should be natural and friendly, never mention JSON or technical details
 
@@ -260,34 +296,33 @@ ${message.text.body}
 Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
 
           try {
-            // Generate content using Gemini AI
             const result = await model.generateContent([{ text: prompt }]);
             const response = await result.response;
             const aiResponseText = response.text();
             
             console.log('AI generated response:', aiResponseText);
 
-            // Parse the AI response
             const parsedResponse = parseAIResponse(aiResponseText);
             if (!parsedResponse) {
               throw new Error('Failed to parse AI response');
             }
 
+            let responseMessage = parsedResponse.message;
+
             // Handle different response types
             if (parsedResponse.metadata.type === 'expense' && parsedResponse.metadata.expenseData) {
-              // Store the expense
               const stored = await storeExpense(supabase, userIdData.id, parsedResponse.metadata.expenseData);
               if (!stored) {
-                console.error('Failed to store expense');
+                responseMessage = "Sorry, I couldn't save your expense. Please try again.";
               }
             } else if (parsedResponse.metadata.type === 'query') {
-              // Get expense summary
+              // Get fresh expense summary
               const summary = await getExpenseSummary(supabase, userIdData.id);
-              parsedResponse.message = summary;
+              responseMessage = summary;
             }
 
             // Send response via WhatsApp
-            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, parsedResponse.message);
+            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, responseMessage);
             
             // Store AI response
             const { error: aiMessageError } = await supabase
@@ -297,7 +332,7 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
                 user_id: userIdData.id,
                 direction: 'outgoing',
                 message_type: 'text',
-                content: { text: parsedResponse.message },
+                content: { text: responseMessage },
                 status: 'sent',
                 created_at: new Date().toISOString()
               })
