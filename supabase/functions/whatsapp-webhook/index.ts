@@ -64,9 +64,9 @@ Example response for querying:
   }
 }`;
 
-  const result = await model.generateContent({
-    contents: [{ text: prompt }]
-  });
+  const result = await model.generateContent([
+    { role: "user", parts: [{ text: prompt }] }
+  ]);
   
   const response = await result.response;
   try {
@@ -190,7 +190,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
-    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? '');
+    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     // Function to send WhatsApp message
