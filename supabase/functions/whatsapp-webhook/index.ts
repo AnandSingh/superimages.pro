@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -14,7 +15,6 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
     .from('messages')
     .select('direction, content, created_at')
     .eq('user_id', userId)
-    .eq('processed', true) // Only include successfully processed messages
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -62,54 +62,6 @@ interface AIResponse {
   message: string;
 }
 
-// Message Processing Status Tracker
-interface ProcessingMetadata {
-  startTime: string;
-  attempts: number;
-  lastError?: string;
-  processingSteps: {
-    step: string;
-    timestamp: string;
-    success: boolean;
-    error?: string;
-  }[];
-}
-
-// Enhanced message deduplication and tracking
-async function checkAndMarkMessageProcessing(supabase: any, messageId: string, userId: string): Promise<boolean> {
-  const now = new Date().toISOString();
-  
-  try {
-    const { data, error } = await supabase
-      .from('messages')
-      .update({
-        processing_attempts: supabase.sql`processing_attempts + 1`,
-        last_processed_at: now,
-        processing_metadata: {
-          startTime: now,
-          attempts: supabase.sql`COALESCE(processing_attempts, 0) + 1`,
-          processingSteps: []
-        }
-      })
-      .eq('whatsapp_message_id', messageId)
-      .eq('processed', false)
-      .eq('user_id', userId)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error marking message as processing:', error);
-      return false;
-    }
-
-    // If no rows were updated, message is already processed or doesn't exist
-    return data !== null;
-  } catch (error) {
-    console.error('Error in checkAndMarkMessageProcessing:', error);
-    return false;
-  }
-}
-
 // Enhanced AI response parser with validation
 function parseAIResponse(aiResponse: string): AIResponse | null {
   try {
@@ -121,6 +73,7 @@ function parseAIResponse(aiResponse: string): AIResponse | null {
     }
 
     const response = JSON.parse(jsonMatch[1]) as AIResponse;
+    // Add timestamp if not present
     if (!response.metadata.timestamp) {
       response.metadata.timestamp = new Date().toISOString();
     }
@@ -133,8 +86,8 @@ function parseAIResponse(aiResponse: string): AIResponse | null {
   }
 }
 
-// Enhanced expense storage with validation and error tracking
-async function storeExpense(supabase: any, userId: string, expenseData: ExpenseData, messageId: string) {
+// Enhanced expense storage with validation
+async function storeExpense(supabase: any, userId: string, expenseData: ExpenseData) {
   console.log(`Storing expense for user ${userId}:`, expenseData);
   
   try {
@@ -149,24 +102,10 @@ async function storeExpense(supabase: any, userId: string, expenseData: ExpenseD
       });
 
     if (error) throw error;
-
-    // Update message processing metadata
-    await updateProcessingMetadata(supabase, messageId, {
-      step: 'store_expense',
-      success: true,
-      timestamp: new Date().toISOString()
-    });
-
     console.log('Expense stored successfully');
     return true;
   } catch (error) {
     console.error('Error storing expense:', error);
-    await updateProcessingMetadata(supabase, messageId, {
-      step: 'store_expense',
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
     return false;
   }
 }
@@ -280,104 +219,34 @@ async function getExpenseSummary(supabase: any, userId: string, timeframe: strin
   }
 }
 
-// Enhanced WhatsApp message sender with retry logic and status tracking
-async function sendWhatsAppMessage(recipient: string, text: string, messageId: string, supabase: any) {
+// Enhanced WhatsApp message sender with retry logic
+async function sendWhatsAppMessage(recipient: string, text: string) {
   const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
 
   console.log(`Sending WhatsApp message to ${recipient}`);
 
-  try {
-    const response = await fetch(
-      `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: recipient,
-          type: 'text',
-          text: { body: text }
-        }),
-      }
-    );
-
-    const result = await response.json();
-    
-    // Update processing metadata
-    await updateProcessingMetadata(supabase, messageId, {
-      step: 'send_whatsapp',
-      success: true,
-      timestamp: new Date().toISOString()
-    });
-
-    console.log('WhatsApp API response:', result);
-    return result;
-  } catch (error) {
-    console.error('Error sending WhatsApp message:', error);
-    await updateProcessingMetadata(supabase, messageId, {
-      step: 'send_whatsapp',
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-    throw error;
-  }
-}
-
-// New function to update processing metadata
-async function updateProcessingMetadata(supabase: any, messageId: string, step: {
-  step: string;
-  success: boolean;
-  error?: string;
-  timestamp: string;
-}) {
-  try {
-    const { error } = await supabase
-      .from('messages')
-      .update({
-        processing_metadata: supabase.sql`jsonb_set(
-          COALESCE(processing_metadata, '{"processingSteps": []}'::jsonb),
-          '{processingSteps}',
-          COALESCE(processing_metadata->'processingSteps', '[]'::jsonb) || ${JSON.stringify(step)}::jsonb
-        )`
-      })
-      .eq('whatsapp_message_id', messageId);
-
-    if (error) {
-      console.error('Error updating processing metadata:', error);
+  const response = await fetch(
+    `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'text',
+        text: { body: text }
+      }),
     }
-  } catch (error) {
-    console.error('Error in updateProcessingMetadata:', error);
-  }
-}
+  );
 
-// Mark message as processed
-async function markMessageProcessed(supabase: any, messageId: string, success: boolean, error?: string) {
-  try {
-    const { error: updateError } = await supabase
-      .from('messages')
-      .update({
-        processed: true,
-        last_processed_at: new Date().toISOString(),
-        processing_metadata: supabase.sql`jsonb_set(
-          COALESCE(processing_metadata, '{}'::jsonb),
-          '{finalStatus}',
-          ${JSON.stringify({ success, error, timestamp: new Date().toISOString() })}::jsonb
-        )`
-      })
-      .eq('whatsapp_message_id', messageId);
-
-    if (updateError) {
-      console.error('Error marking message as processed:', updateError);
-    }
-  } catch (error) {
-    console.error('Error in markMessageProcessed:', error);
-  }
+  const result = await response.json();
+  console.log('WhatsApp API response:', result);
+  return result;
 }
 
 serve(async (req) => {
@@ -402,7 +271,6 @@ serve(async (req) => {
         const message = body.entry[0].changes[0].value.messages[0]
         const sender = body.entry[0].changes[0].value.contacts[0]
         
-        // Get user ID
         const { data: userIdData, error: userIdError } = await supabase
           .from('whatsapp_users')
           .select('id')
@@ -414,18 +282,8 @@ serve(async (req) => {
           throw userIdError
         }
 
-        // Check if message should be processed
-        const shouldProcess = await checkAndMarkMessageProcessing(supabase, message.id, userIdData.id);
-        if (!shouldProcess) {
-          console.log('Message already processed or invalid:', message.id);
-          return new Response(JSON.stringify({ success: true, status: 'already_processed' }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
         const messageContent = message.type === 'text' ? { text: message.text.body } : message[message.type]
         
-        // Store incoming message
         const { error: messageError } = await supabase
           .from('messages')
           .insert({
@@ -444,24 +302,9 @@ serve(async (req) => {
         }
 
         if (message.type === 'text') {
-          try {
-            // Update processing step
-            await updateProcessingMetadata(supabase, message.id, {
-              step: 'fetch_history',
-              success: true,
-              timestamp: new Date().toISOString()
-            });
-
-            const conversationHistory = await getConversationHistory(supabase, userIdData.id);
-            
-            // Update processing step
-            await updateProcessingMetadata(supabase, message.id, {
-              step: 'generate_ai_response',
-              success: true,
-              timestamp: new Date().toISOString()
-            });
-
-            const prompt = `You are a helpful WhatsApp expense tracking assistant. Format your entire response as a JSON object with this enhanced structure:
+          const conversationHistory = await getConversationHistory(supabase, userIdData.id);
+          
+          const prompt = `You are a helpful WhatsApp expense tracking assistant. Format your entire response as a JSON object with this enhanced structure:
 
 {
   "metadata": {
@@ -499,6 +342,7 @@ ${message.text.body}
 
 Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
 
+          try {
             const result = await model.generateContent([{ text: prompt }]);
             const response = await result.response;
             const aiResponseText = response.text();
@@ -513,7 +357,7 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
             let responseMessage = parsedResponse.message;
 
             if (parsedResponse.metadata.type === 'expense' && parsedResponse.metadata.expenseData) {
-              const stored = await storeExpense(supabase, userIdData.id, parsedResponse.metadata.expenseData, message.id);
+              const stored = await storeExpense(supabase, userIdData.id, parsedResponse.metadata.expenseData);
               if (!stored) {
                 responseMessage = "Sorry, I couldn't save your expense. Please try again.";
               }
@@ -530,9 +374,8 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
               }
             }
 
-            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, responseMessage, message.id, supabase);
+            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, responseMessage);
             
-            // Store outgoing message
             const { error: aiMessageError } = await supabase
               .from('messages')
               .insert({
@@ -550,14 +393,9 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
               throw aiMessageError
             }
 
-            // Mark message as successfully processed
-            await markMessageProcessed(supabase, message.id, true);
-
           } catch (error) {
-            console.error('Error generating or sending AI response:', error);
-            // Mark message as processed with error
-            await markMessageProcessed(supabase, message.id, false, error.message);
-            throw error;
+            console.error('Error generating or sending AI response:', error)
+            throw error
           }
         }
       }
