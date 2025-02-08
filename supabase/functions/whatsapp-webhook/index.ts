@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -33,6 +34,62 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
   }).join('\n');
 }
 
+// Function to parse expense data from AI response
+interface ExpenseData {
+  amount: number;
+  category?: string;
+  description?: string;
+  date?: string;
+  isExpense: boolean;
+}
+
+function parseExpenseData(aiResponse: string): { naturalResponse: string; expenseData: ExpenseData | null } {
+  try {
+    // Look for JSON data between $$$ markers
+    const match = aiResponse.match(/\$\$\$(.*?)\$\$\$/s);
+    if (!match) {
+      return { naturalResponse: aiResponse, expenseData: null };
+    }
+
+    const jsonStr = match[1];
+    const expenseData = JSON.parse(jsonStr);
+    const naturalResponse = aiResponse.replace(/\$\$\$.*?\$\$\$/s, '').trim();
+
+    return { naturalResponse, expenseData };
+  } catch (error) {
+    console.error('Error parsing expense data:', error);
+    return { naturalResponse: aiResponse, expenseData: null };
+  }
+}
+
+// Function to send WhatsApp message
+async function sendWhatsAppMessage(recipient: string, text: string) {
+  const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
+  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+
+  const response = await fetch(
+    `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'text',
+        text: { body: text }
+      }),
+    }
+  );
+
+  const result = await response.json();
+  console.log('WhatsApp API response:', result);
+  return result;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -47,9 +104,8 @@ serve(async (req) => {
   })
 
   try {
-    // Test endpoint to verify the function is accessible
+    // Test endpoint
     if (url.pathname === '/test') {
-      console.log('Test endpoint called')
       return new Response(JSON.stringify({ status: 'ok', message: 'Webhook is operational' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -61,14 +117,9 @@ serve(async (req) => {
       const token = url.searchParams.get('hub.verify_token')
       const challenge = url.searchParams.get('hub.challenge')
 
-      console.log('Verification request:', { mode, token, challenge })
-
       if (mode === 'subscribe' && token === Deno.env.get('WHATSAPP_VERIFY_TOKEN')) {
-        console.log('Verification successful, returning challenge:', challenge)
         return new Response(challenge)
       }
-
-      console.log('Verification failed')
       return new Response('Forbidden', { status: 403 })
     }
 
@@ -78,37 +129,9 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Initialize Gemini AI with 2.0-flash model
+    // Initialize Gemini AI
     const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? '');
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-
-    // Function to send WhatsApp message
-    async function sendWhatsAppMessage(recipient: string, text: string) {
-      const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
-      const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
-
-      const response = await fetch(
-        `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
-            to: recipient,
-            type: 'text',
-            text: { body: text }
-          }),
-        }
-      );
-
-      const result = await response.json();
-      console.log('WhatsApp API response:', result);
-      return result;
-    }
 
     // Handle incoming messages and status updates
     if (req.method === 'POST') {
@@ -149,7 +172,7 @@ serve(async (req) => {
           throw userIdError
         }
 
-        // Store the message with appropriate content based on type
+        // Store the incoming message
         let messageContent = {}
         if (message.type === 'text') {
           messageContent = {
@@ -168,8 +191,6 @@ serve(async (req) => {
           status: 'received',
           created_at: new Date(parseInt(message.timestamp) * 1000).toISOString()
         }
-
-        console.log('Storing message:', messageData)
 
         const { error: messageError } = await supabase
           .from('messages')
@@ -204,10 +225,24 @@ serve(async (req) => {
             
             // Get conversation history
             const conversationHistory = await getConversationHistory(supabase, userIdData.id);
-            console.log('Retrieved conversation history:', conversationHistory);
             
-            // Construct improved prompt with conversation history
-            const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
+            // Construct improved prompt with expense tracking capabilities
+            const prompt = `You are a helpful WhatsApp expense tracking assistant. Your main goal is to help users track their expenses and provide insights about their spending. You can also handle general conversation.
+
+For expense-related messages:
+1. If the user mentions spending money, buying something, or asks about their expenses, treat it as an expense-related message
+2. When an expense is mentioned, extract the following information:
+   - Amount (required)
+   - Category (optional: groceries, restaurant, entertainment, transport, utilities, shopping, other)
+   - Description (optional)
+   - Date (optional, default to current date)
+3. Format expense data as JSON between $$$ markers
+4. Provide a natural, conversational response
+
+Example expense formats the user might send:
+- "I spent $50 on groceries"
+- "bought lunch for $15"
+- "paid $100 for electricity bill"
 
 Previous conversation:
 ${conversationHistory}
@@ -215,12 +250,29 @@ ${conversationHistory}
 Current message:
 User: ${message.text.body}
 
-Important instructions:
-- Use the conversation history to maintain context
-- Don't mention that you're a chatbot or AI assistant
-- Don't say you can't remember - use the conversation history provided
-- Respond naturally as if you were in an ongoing conversation
-- Keep responses brief and to the point`;
+If you detect an expense, include the structured data between $$$ markers, like this:
+$$$
+{
+  "isExpense": true,
+  "amount": 50,
+  "category": "groceries",
+  "description": "weekly groceries",
+  "date": "2024-03-15"
+}
+$$$
+
+If it's not an expense-related message, respond naturally and include:
+$$$
+{
+  "isExpense": false
+}
+$$$
+
+Remember to:
+- Keep responses brief and friendly
+- Be helpful with expense tracking
+- Handle both expense and non-expense messages naturally
+- Use the conversation history to maintain context`;
             
             // Generate content using Gemini AI
             const result = await model.generateContent({
@@ -232,10 +284,31 @@ Important instructions:
             const response = await result.response;
             const aiResponse = response.text();
             
-            console.log('AI generated response:', aiResponse)
+            console.log('AI generated response:', aiResponse);
 
-            // Send AI response back via WhatsApp
-            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
+            // Parse the AI response
+            const { naturalResponse, expenseData } = parseExpenseData(aiResponse);
+
+            // If expense data is present and valid, store it
+            if (expenseData && expenseData.isExpense && expenseData.amount) {
+              const { error: expenseError } = await supabase
+                .from('expenses')
+                .insert({
+                  amount: expenseData.amount,
+                  category: expenseData.category || null,
+                  description: expenseData.description || null,
+                  date: expenseData.date || new Date().toISOString(),
+                  user_id: userIdData.id
+                });
+
+              if (expenseError) {
+                console.error('Error storing expense:', expenseError);
+                throw expenseError;
+              }
+            }
+
+            // Send response back via WhatsApp
+            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, naturalResponse);
             
             // Store AI response in database
             const aiMessageData = {
@@ -243,7 +316,7 @@ Important instructions:
               user_id: userIdData.id,
               direction: 'outgoing',
               message_type: 'text',
-              content: { text: aiResponse },
+              content: { text: naturalResponse },
               status: 'sent',
               created_at: new Date().toISOString()
             }
