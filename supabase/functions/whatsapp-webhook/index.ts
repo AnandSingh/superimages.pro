@@ -8,6 +8,32 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Function to format conversation history
+async function getConversationHistory(supabase: any, userId: string, limit = 5) {
+  const { data: messages, error } = await supabase
+    .from('messages')
+    .select('direction, content, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('Error fetching conversation history:', error);
+    return '';
+  }
+
+  if (!messages || messages.length === 0) return '';
+
+  // Reverse to get chronological order
+  const orderedMessages = messages.reverse();
+  
+  return orderedMessages.map(msg => {
+    const role = msg.direction === 'incoming' ? 'User' : 'Assistant';
+    const text = msg.content.text || '[media content]';
+    return `${role}: ${text}`;
+  }).join('\n');
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -38,7 +64,6 @@ serve(async (req) => {
 
       console.log('Verification request:', { mode, token, challenge })
 
-      // Verify mode and token
       if (mode === 'subscribe' && token === Deno.env.get('WHATSAPP_VERIFY_TOKEN')) {
         console.log('Verification successful, returning challenge:', challenge)
         return new Response(challenge)
@@ -178,12 +203,25 @@ serve(async (req) => {
           try {
             console.log('Generating AI response for:', message.text.body)
             
+            // Get conversation history
+            const conversationHistory = await getConversationHistory(supabase, userIdData.id);
+            console.log('Retrieved conversation history:', conversationHistory);
+            
+            // Construct prompt with conversation history
+            const prompt = `You are a helpful WhatsApp business assistant. Keep responses concise and friendly.
+
+Previous conversation:
+${conversationHistory}
+
+Current message:
+User: ${message.text.body}
+
+Please respond in a natural, conversational way while maintaining context from the previous messages.`;
+            
             // Generate content using Gemini AI
             const result = await model.generateContent({
               contents: [{
-                parts: [{
-                  text: `You are a helpful WhatsApp business assistant. Keep responses concise and friendly. Here's the user's message: ${message.text.body}`
-                }]
+                parts: [{ text: prompt }]
               }]
             });
             
