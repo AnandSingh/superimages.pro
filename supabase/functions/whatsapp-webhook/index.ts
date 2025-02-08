@@ -123,10 +123,11 @@ async function handleWhatsAppMessage(message: WhatsAppMessage, supabase: any) {
 async function sendWhatsAppMessage(to: string, message: string) {
   const WHATSAPP_TOKEN = Deno.env.get('WHATSAPP_ACCESS_TOKEN')
   if (!WHATSAPP_TOKEN) {
+    console.error('Missing WhatsApp access token')
     throw new Error('Missing WhatsApp access token')
   }
 
-  const response = await fetch('https://graph.facebook.com/v12.0/me/messages', {
+  const response = await fetch('https://graph.facebook.com/v17.0/me/messages', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
@@ -140,13 +141,17 @@ async function sendWhatsAppMessage(to: string, message: string) {
   })
 
   if (!response.ok) {
-    throw new Error('Failed to send WhatsApp message')
+    const errorText = await response.text()
+    console.error('WhatsApp API error:', errorText)
+    throw new Error('Failed to send WhatsApp message: ' + errorText)
   }
 
   return response.json()
 }
 
 serve(async (req) => {
+  console.log(`${req.method} ${new URL(req.url).pathname}`)
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -165,16 +170,37 @@ serve(async (req) => {
       const token = url.searchParams.get('hub.verify_token')
       const challenge = url.searchParams.get('hub.challenge')
 
-      if (mode === 'subscribe' && token === Deno.env.get('WHATSAPP_VERIFY_TOKEN')) {
+      console.log('Verification request received:', {
+        mode,
+        token: token ? '[REDACTED]' : undefined,
+        challenge
+      })
+
+      const storedToken = Deno.env.get('WHATSAPP_VERIFY_TOKEN')
+      if (!storedToken) {
+        console.error('WHATSAPP_VERIFY_TOKEN is not set in environment')
+        return new Response('Configuration error: Missing verify token', { status: 500 })
+      }
+
+      if (mode === 'subscribe' && token === storedToken) {
+        console.log('Webhook verified successfully')
         return new Response(challenge, {
           headers: { ...corsHeaders, 'Content-Type': 'text/plain' },
         })
       }
+
+      console.error('Verification failed:', {
+        mode,
+        tokenMatch: token === storedToken,
+        hasChallenge: !!challenge
+      })
       return new Response('Invalid verify token', { status: 403 })
     }
 
     // Handle incoming WhatsApp messages
     const message: WhatsAppMessage = await req.json()
+    console.log('Received webhook message:', JSON.stringify(message, null, 2))
+    
     const result = await handleWhatsAppMessage(message, supabaseClient)
 
     return new Response(JSON.stringify(result), {
@@ -182,6 +208,7 @@ serve(async (req) => {
       status: 200,
     })
   } catch (error) {
+    console.error('Webhook error:', error)
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
