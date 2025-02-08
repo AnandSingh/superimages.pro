@@ -150,7 +150,8 @@ async function sendWhatsAppMessage(to: string, message: string) {
 }
 
 serve(async (req) => {
-  console.log(`${req.method} ${new URL(req.url).pathname}`)
+  const url = new URL(req.url)
+  console.log(`${req.method} ${url.pathname} - Query params:`, Object.fromEntries(url.searchParams))
 
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -165,7 +166,6 @@ serve(async (req) => {
 
     // Handle WhatsApp verification request
     if (req.method === 'GET') {
-      const url = new URL(req.url)
       const mode = url.searchParams.get('hub.mode')
       const token = url.searchParams.get('hub.verify_token')
       const challenge = url.searchParams.get('hub.challenge')
@@ -173,14 +173,26 @@ serve(async (req) => {
       console.log('Verification request received:', {
         mode,
         token: token ? '[REDACTED]' : undefined,
-        challenge
+        challenge,
+        pathname: url.pathname
       })
 
       const storedToken = Deno.env.get('WHATSAPP_VERIFY_TOKEN')
       if (!storedToken) {
         console.error('WHATSAPP_VERIFY_TOKEN is not set in environment')
-        return new Response('Configuration error: Missing verify token', { status: 500 })
+        return new Response('Configuration error: Missing verify token', {
+          status: 500,
+          headers: corsHeaders
+        })
       }
+
+      // Log verification attempt details (without exposing the actual token)
+      console.log('Verification check:', {
+        modeMatch: mode === 'subscribe',
+        tokenMatch: token === storedToken,
+        hasChallenge: !!challenge,
+        pathname: url.pathname
+      })
 
       if (mode === 'subscribe' && token === storedToken) {
         console.log('Webhook verified successfully')
@@ -192,20 +204,31 @@ serve(async (req) => {
       console.error('Verification failed:', {
         mode,
         tokenMatch: token === storedToken,
-        hasChallenge: !!challenge
+        hasChallenge: !!challenge,
+        pathname: url.pathname
       })
-      return new Response('Invalid verify token', { status: 403 })
+      return new Response('Forbidden', { 
+        status: 403,
+        headers: corsHeaders
+      })
     }
 
     // Handle incoming WhatsApp messages
-    const message: WhatsAppMessage = await req.json()
-    console.log('Received webhook message:', JSON.stringify(message, null, 2))
-    
-    const result = await handleWhatsAppMessage(message, supabaseClient)
+    if (req.method === 'POST') {
+      const message: WhatsAppMessage = await req.json()
+      console.log('Received webhook message:', JSON.stringify(message, null, 2))
+      
+      const result = await handleWhatsAppMessage(message, supabaseClient)
 
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      })
+    }
+
+    return new Response('Method not allowed', {
+      status: 405,
+      headers: corsHeaders
     })
   } catch (error) {
     console.error('Webhook error:', error)
