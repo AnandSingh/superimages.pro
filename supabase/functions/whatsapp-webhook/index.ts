@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -36,6 +35,8 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
 
 // Function to analyze message intent using AI
 async function analyzeMessageIntent(message: string, model: any) {
+  console.log('Analyzing message intent for:', message);
+  
   const prompt = `You are an expense tracking assistant. Analyze this message and classify it:
 "${message}"
 
@@ -65,15 +66,22 @@ Example response for querying:
   }
 }`;
 
+  console.log('Sending prompt to Gemini:', prompt);
+
   const result = await model.generateContent([
     { text: prompt }
   ]);
   
   const response = await result.response;
+  console.log('Raw Gemini response:', response.text());
+  
   try {
-    return JSON.parse(response.text());
+    const parsedResponse = JSON.parse(response.text());
+    console.log('Successfully parsed response:', parsedResponse);
+    return parsedResponse;
   } catch (error) {
     console.error('Error parsing AI response:', error);
+    console.error('Raw response that failed parsing:', response.text());
     return { intent: 'OTHER' };
   }
 }
@@ -144,12 +152,17 @@ async function recordExpense(supabase: any, userId: string, details: any) {
 
 // Function to format AI response based on intent analysis
 async function handleIntentResponse(supabase: any, userId: string, intentData: any) {
+  console.log('Handling intent response:', intentData);
+  
   switch (intentData.intent) {
     case 'RECORD_EXPENSE':
+      console.log('Recording expense with details:', intentData.details);
       return await recordExpense(supabase, userId, intentData.details);
     case 'QUERY_EXPENSES':
+      console.log('Querying expenses with params:', intentData.queryParams);
       return await handleExpenseQuery(supabase, userId, intentData.queryParams);
     default:
+      console.log('No specific intent detected, sending welcome message');
       return 'I can help you track expenses. Try saying something like "Spent $50 on groceries" or "How much did I spend last week?"';
   }
 }
@@ -312,8 +325,9 @@ serve(async (req) => {
             }
 
             // Analyze message intent
+            console.log('Starting intent analysis for message:', message.text.body);
             const intentAnalysis = await analyzeMessageIntent(message.text.body, model);
-            console.log('Intent analysis:', intentAnalysis);
+            console.log('Intent analysis result:', intentAnalysis);
             
             // Store the message with intent and parsed data
             const messageData = {
@@ -366,6 +380,7 @@ serve(async (req) => {
 
           } catch (error) {
             console.error('Error processing message:', error)
+            console.error('Error stack:', error.stack)
             throw error
           }
         }
@@ -379,6 +394,7 @@ serve(async (req) => {
     return new Response('Method not allowed', { status: 405 })
   } catch (error) {
     console.error('Error processing request:', error)
+    console.error('Error stack:', error.stack)
     return new Response(JSON.stringify({ error: 'Internal server error' }), { 
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
