@@ -12,7 +12,7 @@ export type Database = {
       expenses: {
         Row: {
           amount: number
-          category: string | null
+          category: Database["public"]["Enums"]["expense_category"] | null
           created_at: string | null
           date: string | null
           description: string | null
@@ -21,7 +21,7 @@ export type Database = {
         }
         Insert: {
           amount: number
-          category?: string | null
+          category?: Database["public"]["Enums"]["expense_category"] | null
           created_at?: string | null
           date?: string | null
           description?: string | null
@@ -30,7 +30,7 @@ export type Database = {
         }
         Update: {
           amount?: number
-          category?: string | null
+          category?: Database["public"]["Enums"]["expense_category"] | null
           created_at?: string | null
           date?: string | null
           description?: string | null
@@ -102,7 +102,9 @@ export type Database = {
           created_at: string | null
           direction: string
           id: string
+          intent: Database["public"]["Enums"]["message_intent"] | null
           message_type: string
+          parsed_data: Json | null
           status: string | null
           updated_at: string | null
           user_id: string | null
@@ -113,7 +115,9 @@ export type Database = {
           created_at?: string | null
           direction: string
           id?: string
+          intent?: Database["public"]["Enums"]["message_intent"] | null
           message_type: string
+          parsed_data?: Json | null
           status?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -124,7 +128,9 @@ export type Database = {
           created_at?: string | null
           direction?: string
           id?: string
+          intent?: Database["public"]["Enums"]["message_intent"] | null
           message_type?: string
+          parsed_data?: Json | null
           status?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -175,7 +181,19 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      expense_category:
+        | "groceries"
+        | "restaurant"
+        | "entertainment"
+        | "transport"
+        | "utilities"
+        | "shopping"
+        | "other"
+      message_intent:
+        | "RECORD_EXPENSE"
+        | "QUERY_EXPENSES"
+        | "MODIFY_EXPENSE"
+        | "OTHER"
     }
     CompositeTypes: {
       [_ in never]: never
