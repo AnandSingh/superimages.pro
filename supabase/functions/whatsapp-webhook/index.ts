@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -79,9 +78,9 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Initialize Gemini AI
+    // Initialize Gemini AI with 2.0-flash model
     const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? '');
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     // Function to send WhatsApp message
     async function sendWhatsAppMessage(recipient: string, text: string) {
