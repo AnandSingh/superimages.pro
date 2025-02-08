@@ -103,8 +103,12 @@ export type Database = {
           direction: string
           id: string
           intent: Database["public"]["Enums"]["message_intent"] | null
+          last_processed_at: string | null
           message_type: string
           parsed_data: Json | null
+          processed: boolean | null
+          processing_attempts: number | null
+          processing_metadata: Json | null
           status: string | null
           updated_at: string | null
           user_id: string | null
@@ -116,8 +120,12 @@ export type Database = {
           direction: string
           id?: string
           intent?: Database["public"]["Enums"]["message_intent"] | null
+          last_processed_at?: string | null
           message_type: string
           parsed_data?: Json | null
+          processed?: boolean | null
+          processing_attempts?: number | null
+          processing_metadata?: Json | null
           status?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -129,8 +137,12 @@ export type Database = {
           direction?: string
           id?: string
           intent?: Database["public"]["Enums"]["message_intent"] | null
+          last_processed_at?: string | null
           message_type?: string
           parsed_data?: Json | null
+          processed?: boolean | null
+          processing_attempts?: number | null
+          processing_metadata?: Json | null
           status?: string | null
           updated_at?: string | null
           user_id?: string | null
