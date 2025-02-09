@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -34,14 +35,9 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
     if (msg.message_type === 'text') {
       text = msg.content.text;
     } else if (msg.message_type === 'image') {
-      // For images, include both caption and context if available
-      if (msg.direction === 'outgoing') {
-        text = `[Generated image with caption: ${msg.content.image?.caption || 'No caption'}]`;
-      } else {
-        text = '[Image message]';
-      }
+      text = '[Image]';
     } else {
-      text = `[${msg.message_type} content]`;
+      text = `[${msg.message_type}]`;
     }
     
     return `${role}: ${text}`;
@@ -66,7 +62,7 @@ function detectAspectRatio(text: string): string {
     return '4:3';
   }
   
-  return '1:1'; // Default to square if no specific ratio is detected
+  return '1:1';
 }
 
 // Function to manage context expiration
@@ -79,13 +75,10 @@ async function shouldResetContext(supabase: any, userId: string) {
 
   if (error || !user) return true;
 
-  // Check if there's an existing image context
   if (user.last_image_context) {
     const lastContextTime = new Date(user.last_image_context.timestamp).getTime();
     const currentTime = new Date().getTime();
-    
-    // Reset context if it's older than 5 minutes
-    const contextTimeout = 5 * 60 * 1000; // 5 minutes in milliseconds
+    const contextTimeout = 5 * 60 * 1000; // 5 minutes
     return (currentTime - lastContextTime) > contextTimeout;
   }
 
@@ -118,26 +111,9 @@ async function generateImageWithReplicate(prompt: string, aspectRatio: string) {
     auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
   });
 
-  console.log("Starting image generation with:", {
-    prompt,
-    aspectRatio
-  });
+  console.log("Starting image generation:", { prompt, aspectRatio });
   
   try {
-    console.log("Making Replicate API call with configuration:", {
-      model: "black-forest-labs/flux-schnell",
-      input: {
-        prompt,
-        go_fast: true,
-        megapixels: "1",
-        num_outputs: 1,
-        aspect_ratio: aspectRatio,
-        output_format: "png",
-        output_quality: 90,
-        num_inference_steps: 4
-      }
-    });
-
     const output = await replicate.run(
       "black-forest-labs/flux-schnell",
       {
@@ -154,10 +130,9 @@ async function generateImageWithReplicate(prompt: string, aspectRatio: string) {
       }
     );
     
-    console.log("Raw Replicate API response:", JSON.stringify(output));
+    console.log("Replicate API response:", JSON.stringify(output));
     
     if (!output || !Array.isArray(output) || output.length === 0) {
-      console.error("Invalid response format from Replicate:", output);
       throw new Error("Invalid response from image generation API");
     }
 
@@ -166,29 +141,22 @@ async function generateImageWithReplicate(prompt: string, aspectRatio: string) {
       throw new Error("Invalid image URL generated");
     }
 
-    console.log("Generated image URL:", imageUrl);
     return imageUrl;
   } catch (error) {
-    console.error("Detailed error in generateImageWithReplicate:", {
-      error: error,
-      message: error.message,
-      stack: error.stack
-    });
+    console.error("Error in generateImageWithReplicate:", error);
     throw error;
   }
 }
 
-// Function to send WhatsApp image message with improved error handling
-async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: string) {
+// Function to send WhatsApp image message
+async function sendWhatsAppImage(recipient: string, imageUrl: string) {
   const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
 
-  console.log("Attempting to send WhatsApp image message:", {
+  console.log("Sending WhatsApp image:", {
     recipient,
     imageUrl,
-    caption,
-    phoneNumberId: !!phoneNumberId,
-    accessToken: !!accessToken
+    phoneNumberId: !!phoneNumberId
   });
 
   if (!accessToken || !phoneNumberId) {
@@ -196,9 +164,6 @@ async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: 
   }
 
   try {
-    // First send a status message
-    await sendWhatsAppMessage(recipient, "Processing your image... 🎨");
-
     const response = await fetch(
       `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
       {
@@ -213,8 +178,7 @@ async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: 
           to: recipient,
           type: 'image',
           image: {
-            link: imageUrl,
-            caption: caption || ''
+            link: imageUrl
           }
         }),
       }
@@ -235,10 +199,9 @@ async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: 
     return result;
   } catch (error) {
     console.error('Error sending WhatsApp image:', error);
-    // Send error message to user
     await sendWhatsAppMessage(
       recipient,
-      "Sorry, I couldn't send the image. I'll try describing it instead..."
+      "Sorry, I couldn't send the image. Please try again."
     );
     throw error;
   }
@@ -273,7 +236,6 @@ async function sendWhatsAppMessage(recipient: string, text: string) {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -286,59 +248,45 @@ serve(async (req) => {
   })
 
   try {
-    // Test endpoint to verify the function is accessible
     if (url.pathname === '/test') {
-      console.log('Test endpoint called')
       return new Response(JSON.stringify({ status: 'ok', message: 'Webhook is operational' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Handle verification request
     if (req.method === 'GET') {
       const mode = url.searchParams.get('hub.mode')
       const token = url.searchParams.get('hub.verify_token')
       const challenge = url.searchParams.get('hub.challenge')
 
-      console.log('Verification request:', { mode, token, challenge })
-
       if (mode === 'subscribe' && token === Deno.env.get('WHATSAPP_VERIFY_TOKEN')) {
-        console.log('Verification successful, returning challenge:', challenge)
         return new Response(challenge)
       }
-
-      console.log('Verification failed')
       return new Response('Forbidden', { status: 403 })
     }
 
-    // Initialize Supabase client
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Initialize Gemini AI
     const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    // Handle incoming messages and status updates
     if (req.method === 'POST') {
       const body = await req.json()
       console.log('Received webhook:', JSON.stringify(body, null, 2))
 
-      // Process messages
       if (body.entry?.[0]?.changes?.[0]?.value?.messages) {
         const message = body.entry[0].changes[0].value.messages[0]
         const sender = body.entry[0].changes[0].value.contacts[0]
         
-        console.log("Processing incoming message:", {
+        console.log("Processing message:", {
           messageId: message.id,
           type: message.type,
-          sender: sender.wa_id,
-          timestamp: message.timestamp
+          sender: sender.wa_id
         });
 
-        // Create or update WhatsApp user
         const { data: userData, error: userError } = await supabase
           .from('whatsapp_users')
           .upsert({
@@ -355,7 +303,6 @@ serve(async (req) => {
           throw userError
         }
 
-        // Get the user data including context
         const { data: userContext, error: userContextError } = await supabase
           .from('whatsapp_users')
           .select('id, last_interaction_type, last_image_context')
@@ -367,7 +314,6 @@ serve(async (req) => {
           throw userContextError
         }
 
-        // Store the message with appropriate content based on type
         let messageContent = {}
         if (message.type === 'text') {
           messageContent = {
@@ -387,8 +333,6 @@ serve(async (req) => {
           created_at: new Date(parseInt(message.timestamp) * 1000).toISOString()
         }
 
-        console.log('Storing message:', messageData)
-
         const { error: messageError } = await supabase
           .from('messages')
           .insert(messageData)
@@ -398,7 +342,6 @@ serve(async (req) => {
           throw messageError
         }
 
-        // Handle media messages
         if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
           const { error: mediaError } = await supabase
             .from('media_assets')
@@ -415,16 +358,13 @@ serve(async (req) => {
           }
         }
 
-        // Generate AI response for text messages
         if (message.type === 'text') {
           try {
-            console.log('Processing message:', message.text.body);
+            console.log('Processing text message:', message.text.body);
             
-            // Get conversation history
             const conversationHistory = await getConversationHistory(supabase, userContext.id);
-            console.log('Retrieved conversation history:', conversationHistory);
+            console.log('Conversation history:', conversationHistory);
             
-            // Determine if this is an image generation request
             const imageKeywords = [
               'generate image',
               'create image',
@@ -443,7 +383,6 @@ serve(async (req) => {
               message.text.body.toLowerCase().includes(keyword)
             );
 
-            // Check if this is a follow-up image request based on context
             const isImageContext = userContext.last_interaction_type === 'image_generation';
             const followUpKeywords = ['make it', 'change it to', 'i want', 'instead', 'but'];
             const isFollowUpRequest = isImageContext && 
@@ -456,12 +395,10 @@ serve(async (req) => {
               let promptText = message.text.body;
               let aspectRatio = detectAspectRatio(promptText);
 
-              // If it's a follow-up request, combine with previous context
               if (isFollowUpRequest && userContext.last_image_context) {
                 const previousPrompt = userContext.last_image_context.prompt;
                 const previousAspectRatio = userContext.last_image_context.aspectRatio || '1:1';
                 
-                // Keep previous aspect ratio unless explicitly changed
                 if (aspectRatio === '1:1' && previousAspectRatio !== '1:1') {
                   aspectRatio = previousAspectRatio;
                 }
@@ -469,7 +406,6 @@ serve(async (req) => {
                 promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
               }
 
-              // First, use Gemini to optimize the prompt
               const promptOptimizationPrompt = `
                 I need to generate an image based on this user request: "${promptText}"
                 ${isFollowUpRequest ? "This is a modification of a previous image request." : ""}
@@ -486,27 +422,15 @@ serve(async (req) => {
               const optimizedPrompt = promptResult.response.text().trim();
               console.log('Optimized prompt:', optimizedPrompt);
 
-              // Update user's context with both prompt and aspect ratio
               await updateImageContext(supabase, userContext.id, optimizedPrompt, aspectRatio);
 
-              // Send a status message
-              await sendWhatsAppMessage(
-                sender.wa_id,
-                `I'm generating your image now in ${aspectRatio} format... This might take a few seconds. 🎨`
-              );
+              await sendWhatsAppMessage(sender.wa_id, "Generating...");
 
-              // Generate the image using Replicate
               const imageUrl = await generateImageWithReplicate(optimizedPrompt, aspectRatio);
               console.log('Generated image URL:', imageUrl);
 
-              // Send the image back via WhatsApp
-              const whatsappResponse = await sendWhatsAppImage(
-                sender.wa_id,
-                imageUrl,
-                `Here's your generated image in ${aspectRatio} format! 🎨`
-              );
+              const whatsappResponse = await sendWhatsAppImage(sender.wa_id, imageUrl);
               
-              // Store the response in the database
               const aiMessageData = {
                 whatsapp_message_id: whatsappResponse.messages[0].id,
                 user_id: userContext.id,
@@ -514,8 +438,7 @@ serve(async (req) => {
                 message_type: 'image',
                 content: { 
                   image: {
-                    url: imageUrl,
-                    caption: `Here's your generated image in ${aspectRatio} format! 🎨`
+                    url: imageUrl
                   }
                 },
                 status: 'sent',
@@ -532,7 +455,6 @@ serve(async (req) => {
               }
 
             } else {
-              // Only reset image context if it has expired
               if (await shouldResetContext(supabase, userContext.id)) {
                 const { error: contextError } = await supabase
                   .from('whatsapp_users')
@@ -548,7 +470,6 @@ serve(async (req) => {
                 }
               }
 
-              // Handle regular text message with Gemini AI
               const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
 
 Previous conversation:
@@ -575,10 +496,8 @@ Important instructions:
               
               console.log('AI generated response:', aiResponse)
 
-              // Send AI response back via WhatsApp
               const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
               
-              // Store AI response in database
               const aiMessageData = {
                 whatsapp_message_id: whatsappResponse.messages[0].id,
                 user_id: userContext.id,
@@ -600,18 +519,16 @@ Important instructions:
             }
 
           } catch (error) {
-            console.error('Error generating or sending AI response:', error)
-            // Send error message to user
+            console.error('Error processing message:', error)
             await sendWhatsAppMessage(
               sender.wa_id,
-              "I apologize, but I encountered an error while processing your request. Please try again later."
+              "Sorry, I encountered an error. Please try again."
             );
             throw error
           }
         }
       }
 
-      // Process status updates
       if (body.entry?.[0]?.changes?.[0]?.value?.statuses) {
         const status = body.entry[0].changes[0].value.statuses[0]
         
