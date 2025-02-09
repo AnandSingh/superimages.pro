@@ -34,12 +34,36 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
   }).join('\n');
 }
 
-async function generateImageWithReplicate(prompt: string) {
+// Function to detect aspect ratio from text
+function detectAspectRatio(text: string): string {
+  const portraitKeywords = ['portrait', 'vertical', 'tall'];
+  const landscapeKeywords = ['landscape', 'horizontal', 'wide'];
+  const wideScreenKeywords = ['widescreen', '16:9', 'cinematic'];
+  
+  text = text.toLowerCase();
+  
+  if (portraitKeywords.some(keyword => text.includes(keyword))) {
+    return '3:4';
+  }
+  if (wideScreenKeywords.some(keyword => text.includes(keyword))) {
+    return '16:9';
+  }
+  if (landscapeKeywords.some(keyword => text.includes(keyword))) {
+    return '4:3';
+  }
+  
+  return '1:1'; // Default to square if no specific ratio is detected
+}
+
+async function generateImageWithReplicate(prompt: string, aspectRatio: string) {
   const replicate = new Replicate({
     auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
   });
 
-  console.log("Starting image generation with prompt:", prompt);
+  console.log("Starting image generation with:", {
+    prompt,
+    aspectRatio
+  });
   
   try {
     console.log("Making Replicate API call with configuration:", {
@@ -49,8 +73,8 @@ async function generateImageWithReplicate(prompt: string) {
         go_fast: true,
         megapixels: "1",
         num_outputs: 1,
-        aspect_ratio: "1:1",
-        output_format: "png", // Changed from webp to png for better compatibility
+        aspect_ratio: aspectRatio,
+        output_format: "png",
         output_quality: 90,
         num_inference_steps: 4
       }
@@ -64,8 +88,8 @@ async function generateImageWithReplicate(prompt: string) {
           go_fast: true,
           megapixels: "1",
           num_outputs: 1,
-          aspect_ratio: "1:1",
-          output_format: "png", // Changed from webp to png
+          aspect_ratio: aspectRatio,
+          output_format: "png",
           output_quality: 90,
           num_inference_steps: 4
         }
@@ -79,7 +103,6 @@ async function generateImageWithReplicate(prompt: string) {
       throw new Error("Invalid response from image generation API");
     }
 
-    // Validate the URL
     const imageUrl = output[0];
     if (!imageUrl || !imageUrl.startsWith('https://')) {
       throw new Error("Invalid image URL generated");
@@ -371,10 +394,18 @@ serve(async (req) => {
 
             if (isDirectImageRequest || isFollowUpRequest) {
               let promptText = message.text.body;
+              let aspectRatio = detectAspectRatio(promptText);
 
               // If it's a follow-up request, combine with previous context
               if (isFollowUpRequest && userContext.last_image_context) {
                 const previousPrompt = userContext.last_image_context.prompt;
+                const previousAspectRatio = userContext.last_image_context.aspectRatio || '1:1';
+                
+                // Keep previous aspect ratio unless explicitly changed
+                if (aspectRatio === '1:1' && previousAspectRatio !== '1:1') {
+                  aspectRatio = previousAspectRatio;
+                }
+                
                 promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
               }
 
@@ -382,6 +413,7 @@ serve(async (req) => {
               const promptOptimizationPrompt = `
                 I need to generate an image based on this user request: "${promptText}"
                 ${isFollowUpRequest ? "This is a modification of a previous image request." : ""}
+                The image will be generated in ${aspectRatio} aspect ratio format.
                 Please create an optimized, clear, and detailed prompt for an AI image generator.
                 The prompt should be descriptive but concise.
                 Just return the optimized prompt, nothing else.
@@ -394,13 +426,14 @@ serve(async (req) => {
               const optimizedPrompt = promptResult.response.text().trim();
               console.log('Optimized prompt:', optimizedPrompt);
 
-              // Update user's context
+              // Update user's context with both prompt and aspect ratio
               const { error: contextError } = await supabase
                 .from('whatsapp_users')
                 .update({
                   last_interaction_type: 'image_generation',
                   last_image_context: {
                     prompt: optimizedPrompt,
+                    aspectRatio: aspectRatio,
                     timestamp: new Date().toISOString()
                   }
                 })
@@ -414,18 +447,18 @@ serve(async (req) => {
               // Send a status message
               await sendWhatsAppMessage(
                 sender.wa_id,
-                "I'm generating your image now... This might take a few seconds. 🎨"
+                `I'm generating your image now in ${aspectRatio} format... This might take a few seconds. 🎨`
               );
 
               // Generate the image using Replicate
-              const imageUrl = await generateImageWithReplicate(optimizedPrompt);
+              const imageUrl = await generateImageWithReplicate(optimizedPrompt, aspectRatio);
               console.log('Generated image URL:', imageUrl);
 
               // Send the image back via WhatsApp
               const whatsappResponse = await sendWhatsAppImage(
                 sender.wa_id,
                 imageUrl,
-                "Here's your generated image! 🎨"
+                `Here's your generated image in ${aspectRatio} format! 🎨`
               );
               
               // Store the response in the database
@@ -437,7 +470,7 @@ serve(async (req) => {
                 content: { 
                   image: {
                     url: imageUrl,
-                    caption: "Here's your generated image! 🎨"
+                    caption: `Here's your generated image in ${aspectRatio} format! 🎨`
                   }
                 },
                 status: 'sent',
