@@ -34,67 +34,93 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
   }).join('\n');
 }
 
-async function generateImageWithReplicate(prompt: string) {
-  const replicate = new Replicate({
-    auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
-  });
+type ImageType = 'portrait' | 'landscape' | 'product' | 'artistic' | 'default';
 
-  console.log("Starting image generation with prompt:", prompt);
-  
-  try {
-    console.log("Making Replicate API call with configuration:", {
-      model: "black-forest-labs/flux-schnell",
-      input: {
-        prompt,
-        go_fast: true,
-        megapixels: "1",
-        num_outputs: 1,
-        aspect_ratio: "1:1",
-        output_format: "png", // Changed from webp to png for better compatibility
-        output_quality: 90,
-        num_inference_steps: 4
-      }
-    });
+interface GenerationParams {
+  megapixels: string;
+  aspect_ratio: string;
+  num_inference_steps: number;
+  output_quality: number;
+  go_fast: boolean;
+}
 
-    const output = await replicate.run(
-      "black-forest-labs/flux-schnell",
-      {
-        input: {
-          prompt: prompt,
-          go_fast: true,
-          megapixels: "1",
-          num_outputs: 1,
-          aspect_ratio: "1:1",
-          output_format: "png", // Changed from webp to png
-          output_quality: 90,
-          num_inference_steps: 4
-        }
-      }
-    );
-    
-    console.log("Raw Replicate API response:", JSON.stringify(output));
-    
-    if (!output || !Array.isArray(output) || output.length === 0) {
-      console.error("Invalid response format from Replicate:", output);
-      throw new Error("Invalid response from image generation API");
-    }
-
-    // Validate the URL
-    const imageUrl = output[0];
-    if (!imageUrl || !imageUrl.startsWith('https://')) {
-      throw new Error("Invalid image URL generated");
-    }
-
-    console.log("Generated image URL:", imageUrl);
-    return imageUrl;
-  } catch (error) {
-    console.error("Detailed error in generateImageWithReplicate:", {
-      error: error,
-      message: error.message,
-      stack: error.stack
-    });
-    throw error;
+const imageTypeParams: Record<ImageType, GenerationParams> = {
+  portrait: {
+    megapixels: "1",
+    aspect_ratio: "3:4",
+    num_inference_steps: 6,
+    output_quality: 95,
+    go_fast: true
+  },
+  landscape: {
+    megapixels: "1.5",
+    aspect_ratio: "16:9",
+    num_inference_steps: 4,
+    output_quality: 90,
+    go_fast: true
+  },
+  product: {
+    megapixels: "1",
+    aspect_ratio: "1:1",
+    num_inference_steps: 5,
+    output_quality: 95,
+    go_fast: true
+  },
+  artistic: {
+    megapixels: "1",
+    aspect_ratio: "1:1",
+    num_inference_steps: 3,
+    output_quality: 85,
+    go_fast: true
+  },
+  default: {
+    megapixels: "1",
+    aspect_ratio: "1:1",
+    num_inference_steps: 4,
+    output_quality: 90,
+    go_fast: true
   }
+};
+
+// Function to detect image type from prompt
+function detectImageType(prompt: string): ImageType {
+  const promptLower = prompt.toLowerCase();
+  
+  // Portrait detection
+  if (promptLower.includes('portrait') || 
+      promptLower.includes('person') || 
+      promptLower.includes('face') ||
+      promptLower.includes('selfie')) {
+    return 'portrait';
+  }
+  
+  // Landscape detection
+  if (promptLower.includes('landscape') || 
+      promptLower.includes('scenery') || 
+      promptLower.includes('nature') ||
+      promptLower.includes('sunset') ||
+      promptLower.includes('mountain')) {
+    return 'landscape';
+  }
+  
+  // Product detection
+  if (promptLower.includes('product') || 
+      promptLower.includes('item') ||
+      promptLower.includes('showcase') ||
+      promptLower.includes('car') ||
+      promptLower.includes('phone')) {
+    return 'product';
+  }
+  
+  // Artistic detection
+  if (promptLower.includes('abstract') || 
+      promptLower.includes('artistic') || 
+      promptLower.includes('surreal') ||
+      promptLower.includes('fantasy')) {
+    return 'artistic';
+  }
+  
+  return 'default';
 }
 
 // Function to send WhatsApp image message with improved error handling
@@ -189,6 +215,67 @@ async function sendWhatsAppMessage(recipient: string, text: string) {
   const result = await response.json();
   console.log('WhatsApp API text response:', result);
   return result;
+}
+
+// Function to generate image with Replicate
+async function generateImageWithReplicate(prompt: string) {
+  const replicate = new Replicate({
+    auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
+  });
+
+  console.log("Starting image generation with prompt:", prompt);
+  
+  try {
+    const imageType = detectImageType(prompt);
+    const params = imageTypeParams[imageType];
+    
+    console.log("Detected image type:", imageType);
+    console.log("Using parameters:", params);
+    
+    console.log("Making Replicate API call with configuration:", {
+      model: "black-forest-labs/flux-schnell",
+      input: {
+        prompt,
+        ...params,
+        num_outputs: 1,
+        output_format: "png"
+      }
+    });
+
+    const output = await replicate.run(
+      "black-forest-labs/flux-schnell",
+      {
+        input: {
+          prompt: prompt,
+          ...params,
+          num_outputs: 1,
+          output_format: "png"
+        }
+      }
+    );
+    
+    console.log("Raw Replicate API response:", JSON.stringify(output));
+    
+    if (!output || !Array.isArray(output) || output.length === 0) {
+      console.error("Invalid response format from Replicate:", output);
+      throw new Error("Invalid response from image generation API");
+    }
+
+    const imageUrl = output[0];
+    if (!imageUrl || !imageUrl.startsWith('https://')) {
+      throw new Error("Invalid image URL generated");
+    }
+
+    console.log("Generated image URL:", imageUrl);
+    return imageUrl;
+  } catch (error) {
+    console.error("Detailed error in generateImageWithReplicate:", {
+      error: error,
+      message: error.message,
+      stack: error.stack
+    });
+    throw error;
+  }
 }
 
 serve(async (req) => {
