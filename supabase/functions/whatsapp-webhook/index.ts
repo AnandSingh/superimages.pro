@@ -337,6 +337,137 @@ async function generateImageWithReplicate(prompt: string) {
   }
 }
 
+interface MessageAnalysis {
+  intent: 'image_generation' | 'image_modification' | 'conversation' | 'unclear';
+  imageType: 'portrait' | 'landscape' | 'product' | 'artistic' | null;
+  isFollowUp: boolean;
+  hasEnoughDetail: boolean;
+  missingDetails: string[];
+  suggestedPrompt: string | null;
+  guidanceNeeded: boolean;
+  suggestedGuidance: string | null;
+}
+
+async function analyzeUserMessage(
+  message: string,
+  conversationHistory: string,
+  lastInteractionType: string | null,
+  lastImageContext: any
+): Promise<MessageAnalysis> {
+  const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
+  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+  const analysisPrompt = `
+    Analyze this user message in the context of an AI image generation assistant:
+    "${message}"
+
+    Previous context: ${lastInteractionType === 'image_generation' ? 
+      `User was generating images. Last prompt: ${lastImageContext?.prompt}` : 
+      'Regular conversation'}
+
+    Previous messages:
+    ${conversationHistory}
+
+    Provide a JSON response with:
+    {
+      "intent": Either "image_generation", "image_modification", "conversation", or "unclear",
+      "imageType": Either "portrait", "landscape", "product", "artistic", or null,
+      "isFollowUp": true/false based on if this relates to previous image generation,
+      "hasEnoughDetail": true/false based on if prompt has enough details for good generation,
+      "missingDetails": Array of missing details that would improve the prompt,
+      "suggestedPrompt": Improved version of user's prompt or null,
+      "guidanceNeeded": true/false if user needs help formulating request,
+      "suggestedGuidance": Helpful guidance message if needed or null
+    }
+
+    Focus on understanding if the user wants to:
+    1. Generate a new image
+    2. Modify a previous image
+    3. Just have a conversation
+    4. Needs help/clarification
+
+    Consider image type based on words like:
+    - Portrait/Selfie/Person/Face
+    - Landscape/Nature/Scenery
+    - Product/Item/Object
+    - Artistic/Abstract/Creative
+  `;
+
+  try {
+    const result = await model.generateContent({
+      contents: [{ parts: [{ text: analysisPrompt }] }]
+    });
+    
+    const response = result.response.text();
+    console.log('Analysis response:', response);
+    
+    try {
+      return JSON.parse(response);
+    } catch (e) {
+      console.error('Error parsing analysis response:', e);
+      // Return default analysis if parsing fails
+      return {
+        intent: 'unclear',
+        imageType: null,
+        isFollowUp: false,
+        hasEnoughDetail: false,
+        missingDetails: ['Could not analyze request properly'],
+        suggestedPrompt: null,
+        guidanceNeeded: true,
+        suggestedGuidance: "I'm having trouble understanding your request. Could you please rephrase it?"
+      };
+    }
+  } catch (error) {
+    console.error('Error in message analysis:', error);
+    throw error;
+  }
+}
+
+async function handleImageGeneration(
+  analysis: MessageAnalysis,
+  originalPrompt: string,
+  sender: { wa_id: string },
+  userContext: any
+) {
+  let promptText = originalPrompt;
+
+  // If it's a follow-up request, combine with previous context
+  if (analysis.isFollowUp && userContext.last_image_context) {
+    const previousPrompt = userContext.last_image_context.prompt;
+    promptText = `${originalPrompt} (based on previous request: ${previousPrompt})`;
+  }
+
+  // If we have a suggested prompt improvement, use it
+  if (analysis.suggestedPrompt) {
+    promptText = analysis.suggestedPrompt;
+  }
+
+  // If guidance is needed, send guidance message first
+  if (analysis.guidanceNeeded && analysis.suggestedGuidance) {
+    await sendWhatsAppMessage(sender.wa_id, analysis.suggestedGuidance);
+    if (!analysis.hasEnoughDetail) {
+      return; // Wait for user to provide more details
+    }
+  }
+
+  // Generate the image using the enhanced prompt
+  try {
+    const imageUrl = await generateImageWithReplicate(promptText);
+    console.log('Generated image URL:', imageUrl);
+
+    const whatsappResponse = await sendWhatsAppImage(
+      sender.wa_id,
+      imageUrl,
+      "Here's your generated image! 🎨"
+    );
+
+    return whatsappResponse;
+  } catch (error) {
+    console.error('Error in image generation:', error);
+    throw error;
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
