@@ -512,7 +512,9 @@ Detailed request:
 User: "A woman with wavy dark brown hair, wearing an off-shoulder sweater"
 Output: "Professional portrait photography of a detailed, high-quality scene showing a woman with flowing wavy dark brown hair cascading past her shoulders, wearing a cozy off-shoulder brown knit sweater that creates elegant draping effects. The background has a subtle gradient of warm earth tones with artistic bokeh effects. The lighting is soft and diffused, creating gentle highlights in her hair and natural skin tones."
 
-Return only the generated prompt, no explanations.";
+Current request to transform: "${promptText}"
+
+Return only the generated prompt, no explanations.`;
 
               const promptResult = await model.generateContent({
                 contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
