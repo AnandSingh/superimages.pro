@@ -8,30 +8,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Function to format conversation history
-async function getConversationHistory(supabase: any, userId: string, limit = 5) {
-  const { data: messages, error } = await supabase
-    .from('messages')
-    .select('direction, content, created_at')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    console.error('Error fetching conversation history:', error);
-    return '';
-  }
-
-  if (!messages || messages.length === 0) return '';
-
-  // Reverse to get chronological order
-  const orderedMessages = messages.reverse();
+// Function to detect if a message is an image request
+function isImageRequest(message: string, lastInteractionType: string | null): boolean {
+  const imageKeywords = [
+    // Direct image creation keywords
+    'generate image', 'create image', 'make image',
+    'create an image', 'generate an image', 'make an image',
+    'image of', 'picture of', 'draw', 'create a picture',
+    'generate a picture', 'make a picture',
+    // Photography related keywords
+    'selfie', 'photo', 'photograph', 'pic', 'snap',
+    'take a picture', 'take a photo', 'capture',
+    // Artistic keywords
+    'paint', 'sketch', 'illustrate', 'design',
+    // Single word triggers when in image context
+    'make', 'create', 'generate', 'show'
+  ];
   
-  return orderedMessages.map(msg => {
-    const role = msg.direction === 'incoming' ? 'User' : 'Assistant';
-    const text = msg.content.text || '[media content]';
-    return `${role}: ${text}`;
-  }).join('\n');
+  const message_lower = message.toLowerCase();
+  
+  // Check if it's a direct image request
+  const isDirectRequest = imageKeywords.some(keyword => 
+    message_lower.includes(keyword)
+  );
+  
+  // Check if it's a follow-up request in an image context
+  const followUpKeywords = ['make it', 'change it to', 'instead', 'but', 'with'];
+  const isFollowUpInImageContext = 
+    lastInteractionType === 'image_generation' && 
+    followUpKeywords.some(keyword => message_lower.includes(keyword));
+  
+  // Also treat single subjects in image context as image requests
+  const isSingleSubjectInImageContext = 
+    lastInteractionType === 'image_generation' && 
+    message.split(' ').length <= 3;
+  
+  return isDirectRequest || isFollowUpInImageContext || isSingleSubjectInImageContext;
 }
 
 // Function to detect aspect ratio from text
@@ -415,38 +427,18 @@ serve(async (req) => {
             const conversationHistory = await getConversationHistory(supabase, userContext.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
-            // Determine if this is an image generation request
-            const imageKeywords = [
-              'generate image',
-              'create image',
-              'make image',
-              'create an image',
-              'generate an image',
-              'make an image',
-              'image of',
-              'picture of',
-              'draw',
-              'create a picture',
-              'generate a picture'
-            ];
-            
-            const isDirectImageRequest = imageKeywords.some(keyword => 
-              message.text.body.toLowerCase().includes(keyword)
+            // Check if this is an image generation request
+            const isImageGenerationRequest = isImageRequest(
+              message.text.body,
+              userContext.last_interaction_type
             );
 
-            // Check if this is a follow-up image request based on context
-            const isImageContext = userContext.last_interaction_type === 'image_generation';
-            const followUpKeywords = ['make it', 'change it to', 'i want', 'instead', 'but'];
-            const isFollowUpRequest = isImageContext && followUpKeywords.some(keyword =>
-              message.text.body.toLowerCase().includes(keyword)
-            );
-
-            if (isDirectImageRequest || isFollowUpRequest) {
+            if (isImageGenerationRequest) {
               let promptText = message.text.body;
               let aspectRatio = detectAspectRatio(promptText);
 
               // If it's a follow-up request, combine with previous context
-              if (isFollowUpRequest && userContext.last_image_context) {
+              if (userContext.last_image_context) {
                 const previousPrompt = userContext.last_image_context.prompt;
                 const previousAspectRatio = userContext.last_image_context.aspectRatio || '1:1';
                 
@@ -461,7 +453,7 @@ serve(async (req) => {
               // First, use Gemini to optimize the prompt
               const promptOptimizationPrompt = `
                 I need to generate an image based on this user request: "${promptText}"
-                ${isFollowUpRequest ? "This is a modification of a previous image request." : ""}
+                ${isImageGenerationRequest ? "This is a modification of a previous image request." : ""}
                 The image will be generated in ${aspectRatio} aspect ratio format.
                 Please create an optimized, clear, and detailed prompt for an AI image generator.
                 The prompt should be descriptive but concise.
@@ -606,9 +598,12 @@ Important instructions:
           } catch (error) {
             console.error('Error generating or sending AI response:', error)
             // Send error message to user
+            const friendlyErrorMessage = getUserFriendlyErrorMessage(error, 
+              error.message?.includes('image') ? 'image_generation' : 'conversation'
+            );
             await sendWhatsAppMessage(
               sender.wa_id,
-              "I apologize, but I encountered an error while processing your request. Please try again later."
+              friendlyErrorMessage
             );
             throw error
           }
