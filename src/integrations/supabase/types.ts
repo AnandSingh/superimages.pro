@@ -9,6 +9,77 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      command_definitions: {
+        Row: {
+          command: string
+          created_at: string | null
+          description: string
+          id: string
+          parameters: Json | null
+          type: string
+        }
+        Insert: {
+          command: string
+          created_at?: string | null
+          description: string
+          id?: string
+          parameters?: Json | null
+          type: string
+        }
+        Update: {
+          command?: string
+          created_at?: string | null
+          description?: string
+          id?: string
+          parameters?: Json | null
+          type?: string
+        }
+        Relationships: []
+      }
+      expense_summaries: {
+        Row: {
+          category_totals: Json
+          created_at: string | null
+          end_date: string
+          id: string
+          last_updated: string | null
+          start_date: string
+          timeframe: string
+          total_amount: number
+          user_id: string
+        }
+        Insert: {
+          category_totals?: Json
+          created_at?: string | null
+          end_date: string
+          id?: string
+          last_updated?: string | null
+          start_date: string
+          timeframe: string
+          total_amount?: number
+          user_id: string
+        }
+        Update: {
+          category_totals?: Json
+          created_at?: string | null
+          end_date?: string
+          id?: string
+          last_updated?: string | null
+          start_date?: string
+          timeframe?: string
+          total_amount?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_summaries_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expenses: {
         Row: {
           amount: number
@@ -99,6 +170,7 @@ export type Database = {
       messages: {
         Row: {
           content: Json
+          conversation_context: Json | null
           created_at: string | null
           direction: string
           id: string
@@ -116,6 +188,7 @@ export type Database = {
         }
         Insert: {
           content: Json
+          conversation_context?: Json | null
           created_at?: string | null
           direction: string
           id?: string
@@ -133,6 +206,7 @@ export type Database = {
         }
         Update: {
           content?: Json
+          conversation_context?: Json | null
           created_at?: string | null
           direction?: string
           id?: string
@@ -206,6 +280,9 @@ export type Database = {
         | "QUERY_EXPENSES"
         | "MODIFY_EXPENSE"
         | "OTHER"
+        | "FINANCIAL_ADVICE"
+        | "CLARIFICATION"
+        | "CONVERSATION"
     }
     CompositeTypes: {
       [_ in never]: never

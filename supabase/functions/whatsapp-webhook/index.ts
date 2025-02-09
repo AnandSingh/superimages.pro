@@ -8,12 +8,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Enhanced conversation history function with metadata
+// Enhanced conversation history with context
 async function getConversationHistory(supabase: any, userId: string, limit = 5) {
   console.log(`Fetching conversation history for user ${userId}, limit: ${limit}`);
   const { data: messages, error } = await supabase
     .from('messages')
-    .select('direction, content, created_at')
+    .select('direction, content, conversation_context, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -31,14 +31,17 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
   const orderedMessages = messages.reverse();
   console.log(`Found ${orderedMessages.length} messages in history`);
   
+  // Enhanced context-aware message formatting
   return orderedMessages.map(msg => {
     const role = msg.direction === 'incoming' ? 'User' : 'Assistant';
     const text = msg.content.text || '[media content]';
-    return `${role}: ${text}`;
+    const context = msg.conversation_context ? 
+      `[Context: ${msg.conversation_context.conversation_flow || 'general'}]` : '';
+    return `${role}${context}: ${text}`;
   }).join('\n');
 }
 
-// Enhanced AI response interface
+// Enhanced AI response interface with conversation context
 interface ExpenseData {
   amount: number;
   category?: string;
@@ -52,9 +55,17 @@ interface QueryMetadata {
   category?: string;
 }
 
+interface ConversationContext {
+  previous_topic?: string;
+  conversation_flow?: string;
+  last_action?: string;
+  confidence_score?: number;
+}
+
 interface AIResponse {
   metadata: {
-    type: 'expense' | 'query' | 'conversation';
+    type: 'expense' | 'query' | 'financial_advice' | 'clarification' | 'conversation';
+    context: ConversationContext;
     queryMetadata?: QueryMetadata;
     expenseData?: ExpenseData;
     timestamp: string;
@@ -62,7 +73,7 @@ interface AIResponse {
   message: string;
 }
 
-// Enhanced AI response parser with validation
+// Enhanced AI response parser with context validation
 function parseAIResponse(aiResponse: string): AIResponse | null {
   try {
     console.log('Parsing AI response:', aiResponse);
@@ -73,9 +84,18 @@ function parseAIResponse(aiResponse: string): AIResponse | null {
     }
 
     const response = JSON.parse(jsonMatch[1]) as AIResponse;
+    
     // Add timestamp if not present
     if (!response.metadata.timestamp) {
       response.metadata.timestamp = new Date().toISOString();
+    }
+    
+    // Ensure context is present
+    if (!response.metadata.context) {
+      response.metadata.context = {
+        conversation_flow: 'general',
+        confidence_score: 1.0
+      };
     }
     
     console.log('Parsed AI response:', response);
@@ -284,6 +304,7 @@ serve(async (req) => {
 
         const messageContent = message.type === 'text' ? { text: message.text.body } : message[message.type]
         
+        // Store incoming message with null context initially
         const { error: messageError } = await supabase
           .from('messages')
           .insert({
@@ -293,6 +314,7 @@ serve(async (req) => {
             message_type: message.type,
             content: messageContent,
             status: 'received',
+            conversation_context: null,
             created_at: new Date(parseInt(message.timestamp) * 1000).toISOString()
           })
 
@@ -304,35 +326,49 @@ serve(async (req) => {
         if (message.type === 'text') {
           const conversationHistory = await getConversationHistory(supabase, userIdData.id);
           
-          const prompt = `You are a helpful WhatsApp expense tracking assistant. Format your entire response as a JSON object with this enhanced structure:
+          const prompt = `You are a helpful WhatsApp expense tracking assistant. Your primary roles are:
+1. Recording expenses when users report spending
+2. Providing expense summaries when explicitly requested
+3. Offering financial advice and general conversation
+
+IMPORTANT CONTEXT RULES:
+- "Save money" or "money tips" = financial_advice type
+- Only classify as expense if there's a clear indication of spending (numbers, amounts)
+- Only provide totals when explicitly asked about expenses or summaries
+- Default to conversation type unless clearly about expenses or queries
+
+Format your entire response as a JSON object with this structure:
 
 {
   "metadata": {
-    "type": "expense" | "query" | "conversation",
+    "type": "expense" | "query" | "financial_advice" | "clarification" | "conversation",
     "timestamp": "current ISO timestamp",
+    "context": {
+      "previous_topic": string | null,
+      "conversation_flow": string,
+      "last_action": string | null,
+      "confidence_score": number
+    },
     "queryMetadata": {
       "type": "total" | "category" | "timeframe",
       "timeframe": "today" | "week" | "month",
-      "category": "all" | specific-category
+      "category": string
     },
     "expenseData": {
       "amount": number,
-      "category": string (one of: groceries, restaurant, entertainment, transport, utilities, shopping, other),
+      "category": string,
       "description": string,
-      "date": string (ISO format)
+      "date": string
     }
   },
   "message": "your natural response here"
 }
 
-Rules:
-1. If the user mentions spending money: set type="expense" and include expenseData
-2. If the user asks about spending, mentions "total", asks to verify ("are you sure?"), or asks to recalculate: 
-   - set type="query"
-   - include queryMetadata with appropriate timeframe and category
-3. For general conversation: set type="conversation"
-4. ALWAYS include a timestamp
-5. The "message" field should be natural and friendly
+Analyze the user's intent carefully:
+1. Is this about a specific expense? (must include amount)
+2. Is this explicitly requesting expense information?
+3. Is this general financial discussion?
+4. Is this casual conversation?
 
 Previous conversation:
 ${conversationHistory}
@@ -356,26 +392,51 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
 
             let responseMessage = parsedResponse.message;
 
-            if (parsedResponse.metadata.type === 'expense' && parsedResponse.metadata.expenseData) {
-              const stored = await storeExpense(supabase, userIdData.id, parsedResponse.metadata.expenseData);
-              if (!stored) {
-                responseMessage = "Sorry, I couldn't save your expense. Please try again.";
-              }
-            } else if (parsedResponse.metadata.type === 'query') {
-              const queryMeta = parsedResponse.metadata.queryMetadata;
-              if (queryMeta) {
-                const summary = await getExpenseSummary(
-                  supabase, 
-                  userIdData.id, 
-                  queryMeta.timeframe,
-                  queryMeta.category
-                );
-                responseMessage = summary;
-              }
+            // Handle different types with context
+            switch (parsedResponse.metadata.type) {
+              case 'expense':
+                if (parsedResponse.metadata.expenseData) {
+                  const stored = await storeExpense(supabase, userIdData.id, parsedResponse.metadata.expenseData);
+                  if (!stored) {
+                    responseMessage = "Sorry, I couldn't save your expense. Please try again.";
+                    parsedResponse.metadata.context.last_action = 'expense_failed';
+                  } else {
+                    parsedResponse.metadata.context.last_action = 'expense_stored';
+                  }
+                }
+                break;
+
+              case 'query':
+                if (parsedResponse.metadata.queryMetadata) {
+                  const summary = await getExpenseSummary(
+                    supabase, 
+                    userIdData.id, 
+                    parsedResponse.metadata.queryMetadata.timeframe,
+                    parsedResponse.metadata.queryMetadata.category
+                  );
+                  responseMessage = summary;
+                  parsedResponse.metadata.context.last_action = 'summary_provided';
+                }
+                break;
+
+              case 'financial_advice':
+                parsedResponse.metadata.context.conversation_flow = 'advice';
+                parsedResponse.metadata.context.last_action = 'advice_given';
+                break;
+
+              case 'clarification':
+                parsedResponse.metadata.context.conversation_flow = 'clarification';
+                parsedResponse.metadata.context.last_action = 'clarification_requested';
+                break;
+
+              default:
+                parsedResponse.metadata.context.conversation_flow = 'general';
+                parsedResponse.metadata.context.last_action = 'conversation';
             }
 
             const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, responseMessage);
             
+            // Store AI response with context
             const { error: aiMessageError } = await supabase
               .from('messages')
               .insert({
@@ -385,12 +446,26 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
                 message_type: 'text',
                 content: { text: responseMessage },
                 status: 'sent',
+                conversation_context: parsedResponse.metadata.context,
                 created_at: new Date().toISOString()
               })
 
             if (aiMessageError) {
               console.error('Error storing AI message:', aiMessageError)
               throw aiMessageError
+            }
+
+            // Update the context of the incoming message
+            const { error: updateError } = await supabase
+              .from('messages')
+              .update({
+                conversation_context: parsedResponse.metadata.context,
+                intent: parsedResponse.metadata.type.toUpperCase()
+              })
+              .eq('whatsapp_message_id', message.id)
+
+            if (updateError) {
+              console.error('Error updating message context:', updateError)
             }
 
           } catch (error) {
