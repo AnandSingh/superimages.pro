@@ -54,17 +54,48 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
     .join('\n');
 }
 
-const helpfulImageRequestGuide = `I can generate images for you! Try phrases like:
-- "Show me a photo of..."
-- "Generate an image of..."
-- "Create a picture of..."
-- "Draw me..."
+const helpfulImageRequestGuide = `I can generate any image you want! Just use phrases like:
+- "I want a picture of..."
+- "Show me..."
+- "Generate..."
+- "Create..."
 
-To modify an existing image, try:
+Or to change an existing image, try:
 - "Make it more..."
-- "Change the color to..."
-- "Make the background..."
-- "Add more..."`;
+- "Change it to..."
+- "Now make it..."
+- "Now show me..."
+
+For example:
+"Show me superheroes"
+"Now make them more colorful"
+"Generate a landscape"`;
+
+const imageKeywords = [
+  // Want/Need variations
+  'want', 'need', 'give me',
+  // General commands
+  'show', 'generate', 'create', 'make',
+  // Specific requests
+  'photo', 'picture', 'image',
+  // Context switches
+  'now i want', 'can you show', 'how about',
+  // Simple commands
+  'draw', 'create'
+];
+
+const modificationKeywords = [
+  // Direct modifications
+  'make it', 'change it', 'turn it',
+  // Style changes
+  'more', 'less', 'bigger', 'smaller',
+  // Context switches
+  'now make', 'now change', 'instead make',
+  // Additions/Removals
+  'add', 'remove', 'put', 'take',
+  // Simple changes
+  'but', 'and', 'with', 'without'
+];
 
 async function generateImageWithReplicate(prompt: string) {
   const replicate = new Replicate({
@@ -356,29 +387,6 @@ serve(async (req) => {
             const conversationHistory = await getConversationHistory(supabase, userContext.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
-            const imageKeywords = [
-              // Direct requests
-              'photo of', 'image of', 'picture of',
-              // Need/Want patterns
-              'need a photo', 'need an image', 'need a picture',
-              'want a photo', 'want an image', 'want a picture',
-              // Get patterns
-              'get me a photo', 'get me an image', 'get me a picture',
-              // Create/Generate patterns
-              'create', 'generate', 'make', 'draw',
-              // Simple patterns
-              'photo', 'picture', 'image',
-              'show me'
-            ];
-
-            const modificationKeywords = [
-              'make it', 'change it', 'instead', 
-              'make the', 'change the', 'turn the',
-              'but with', 'but make', 'but change',
-              'modify', 'adjust', 'update',
-              'add more', 'remove', 'change'
-            ];
-            
             const isDirectImageRequest = imageKeywords.some(keyword => 
               message.text.body.toLowerCase().includes(keyword)
             );
@@ -547,7 +555,7 @@ Important instructions:
               const response = await result.response;
               const aiResponse = response.text();
               
-              console.log('AI generated response:', aiResponse)
+              console.log('AI generated response:', aiResponse);
 
               const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
               
