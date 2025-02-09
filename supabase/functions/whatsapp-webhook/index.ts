@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -69,7 +68,38 @@ For example:
 "Show me a beach sunset"
 "Generate a fantasy castle"
 "Make me a cute puppy"
-"I want a picture of mountains"`;
+"I want a picture of mountains";
+
+I understand you best when you use keywords like "show me", "create", "generate", or "make" in your requests.
+
+Try these example commands:
+"Show me a magical forest"
+"Generate a futuristic city"
+"Create a cute puppy"
+"Make me a dragon"
+"I want a picture of mountains"
+"Give me an image of space";
+
+I can generate any kind of image you want! Here's how to use me:
+
+Important: I need specific keywords to understand your requests!
+
+1. New Images:
+Always start with keywords like:
+- "Show me..."
+- "Generate..."
+- "Create..."
+- "Make me..."
+- "I want..."
+- "Give me..."
+
+For example:
+"Show me a sunset"
+"Generate a sci-fi city"
+"I want a picture of mountains"
+"Make me a fantasy castle"
+
+Try it now! What would you like me to create?`;
 
 const INITIAL_GREETING = `Hi! I'm an AI image generator that can create any image you imagine! 🎨
 
@@ -81,7 +111,28 @@ Try these example commands:
 "Create a cute puppy"
 "Make me a dragon"
 "I want a picture of mountains"
-"Give me an image of space"`;
+"Give me an image of space";
+
+I can generate any kind of image you want! Here's how to use me:
+
+Important: I need specific keywords to understand your requests!
+
+1. New Images:
+Always start with keywords like:
+- "Show me..."
+- "Generate..."
+- "Create..."
+- "Make me..."
+- "I want..."
+- "Give me..."
+
+For example:
+"Show me a sunset"
+"Generate a sci-fi city"
+"I want a picture of mountains"
+"Make me a fantasy castle"
+
+Try it now! What would you like me to create?`;
 
 const HOW_IT_WORKS_GUIDE = `I can generate any kind of image you want! Here's how to use me:
 
@@ -229,14 +280,13 @@ async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: 
             link: imageUrl,
             caption: `Here's your generated image! 🎨
 
-You can make a similar image by using keywords like:
+You can make a similar image by using keywords like: "Make it, Change it, Add", examples:
+
 - "Make it more vibrant"
 - "Change it to night time"
 - "Add more details"
-- "Now show it in winter"
-- "Generate it with different colors"
 
-*If the new images are too similar and you want something completely different, create a new image by using the keywords (Create, make, give me, etc..)  Examples:
+*If the new images are too similar and you want something completely different, create a new image by using the keywords (Create, Make, Give me, etc..)  Examples:
 
 "Create a cute puppy"
 "Make me a dragon"
