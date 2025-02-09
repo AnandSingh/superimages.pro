@@ -28,10 +28,13 @@ const IMAGE_KEYWORDS = [
   'i need a picture',
   'i want a picture',
   'selfie',
-  'photo'
+  'photo',
+  'another one',
+  'one more',
+  'try again'
 ];
 
-// Enhanced set of follow-up keywords
+// Enhanced set of follow-up keywords with natural language variations
 const FOLLOWUP_KEYWORDS = [
   'make it',
   'change it to',
@@ -41,8 +44,23 @@ const FOLLOWUP_KEYWORDS = [
   'can you',
   'modify',
   'update',
-  'different'
+  'different',
+  'another',
+  'more',
+  'again',
+  'like that',
+  'similar',
+  'same but',
+  'not bad',
+  'looks good',
+  'nice',
+  'perfect',
+  'better',
+  'awesome'
 ];
+
+// Time window for context preservation (in milliseconds)
+const CONTEXT_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 // Error messages for better user feedback
 const ERROR_MESSAGES = {
@@ -58,13 +76,31 @@ function isValidImageRequest(message: string): boolean {
   return true;
 }
 
-// Function to check if a message is a potential image request
-function isImageRequest(message: string, isImageContext: boolean): boolean {
+// Enhanced message classification
+function classifyMessage(message: string, context: any): 'image_request' | 'followup' | 'conversation' {
   const lowercaseMessage = message.toLowerCase();
-  return (
-    IMAGE_KEYWORDS.some(keyword => lowercaseMessage.includes(keyword)) ||
-    (isImageContext && FOLLOWUP_KEYWORDS.some(keyword => lowercaseMessage.includes(keyword)))
-  );
+  
+  // Check if it's a direct image request
+  if (IMAGE_KEYWORDS.some(keyword => lowercaseMessage.includes(keyword))) {
+    return 'image_request';
+  }
+
+  // Check if it's a follow-up in an image context
+  if (context?.last_interaction_type === 'image_generation' && 
+      (FOLLOWUP_KEYWORDS.some(keyword => lowercaseMessage.includes(keyword)) ||
+       isWithinTimeWindow(context?.last_image_context?.timestamp))) {
+    return 'followup';
+  }
+
+  return 'conversation';
+}
+
+// Check if the last interaction was within the context time window
+function isWithinTimeWindow(timestamp: string | undefined): boolean {
+  if (!timestamp) return false;
+  const lastInteraction = new Date(timestamp).getTime();
+  const now = new Date().getTime();
+  return (now - lastInteraction) < CONTEXT_TIMEOUT;
 }
 
 // Enhanced conversation history formatting
@@ -342,7 +378,7 @@ serve(async (req) => {
           throw messageError
         }
 
-        // Process text messages
+        // Process text messages with enhanced context handling
         if (message.type === 'text') {
           try {
             const userMessage = message.text.body;
@@ -356,27 +392,47 @@ serve(async (req) => {
               return;
             }
 
-            const isImageContext = userContext.last_interaction_type === 'image_generation';
+            // Classify the message type using enhanced context
+            const messageType = classifyMessage(userMessage, userContext);
+            console.log('Message classified as:', messageType);
             
-            // Check if this is an image request
-            if (isImageRequest(userMessage, isImageContext)) {
+            if (messageType === 'image_request' || messageType === 'followup') {
               let promptText = userMessage;
+              let contextToStore: any = {
+                original_message: userMessage,
+                timestamp: new Date().toISOString()
+              };
 
-              // Handle follow-up requests
-              if (isImageContext && userContext.last_image_context) {
+              // Handle follow-up requests with better context preservation
+              if (messageType === 'followup' && userContext.last_image_context) {
                 const previousPrompt = userContext.last_image_context.prompt;
+                const previousContext = userContext.last_image_context;
+                
+                // Preserve scene attributes from previous context
+                contextToStore = {
+                  ...previousContext,
+                  original_message: userMessage,
+                  previous_prompt: previousPrompt,
+                  timestamp: new Date().toISOString()
+                };
+
                 promptText = `${userMessage} (based on previous request: ${previousPrompt})`;
               }
 
-              // Optimize prompt with Gemini
+              // Enhanced prompt optimization with Gemini
               const promptOptimizationPrompt = `
                 I need to generate an image based on this user request: "${promptText}"
-                ${isImageContext ? "This is a modification of a previous image request." : ""}
+                ${messageType === 'followup' ? "This is a modification of a previous image request." : ""}
+                ${contextToStore.scene_type ? `Previous scene type was: ${contextToStore.scene_type}` : ""}
+                ${contextToStore.style ? `Previous style was: ${contextToStore.style}` : ""}
+                
                 Please create an optimized, clear, and detailed prompt that:
                 - Maintains the user's core request
                 - Adds helpful artistic details
                 - Preserves any specific style preferences
                 - Includes proper composition elements
+                - Maintains scene consistency if this is a modification
+                
                 Just return the optimized prompt, nothing else.
               `;
 
@@ -387,15 +443,15 @@ serve(async (req) => {
               const optimizedPrompt = promptResult.response.text().trim();
               console.log('Optimized prompt:', optimizedPrompt);
 
-              // Update context
+              // Update context with optimized prompt
+              contextToStore.prompt = optimizedPrompt;
+
+              // Update user context without resetting for acknowledgments
               const { error: contextError } = await supabase
                 .from('whatsapp_users')
                 .update({
                   last_interaction_type: 'image_generation',
-                  last_image_context: {
-                    prompt: optimizedPrompt,
-                    timestamp: new Date().toISOString()
-                  }
+                  last_image_context: contextToStore
                 })
                 .eq('id', userContext.id);
 
@@ -409,7 +465,7 @@ serve(async (req) => {
               const whatsappResponse = await sendWhatsAppImage(
                 sender.wa_id,
                 imageUrl,
-                "Here's your generated image! 🎨"
+                "Here's your generated image! 🎨\nReply with modifications or say 'another one' for a variation."
               );
               
               // Store response
@@ -433,18 +489,7 @@ serve(async (req) => {
                 .insert(aiMessageData)
 
             } else {
-              // Handle regular conversation
-              // Reset image context if needed
-              if (isImageContext) {
-                await supabase
-                  .from('whatsapp_users')
-                  .update({
-                    last_interaction_type: 'conversation',
-                    last_image_context: null
-                  })
-                  .eq('id', userContext.id);
-              }
-
+              // Handle regular conversation without resetting context immediately
               const conversationHistory = await getConversationHistory(supabase, userContext.id);
               
               const prompt = `
@@ -456,6 +501,7 @@ serve(async (req) => {
                 - Use conversation history for context
                 - Keep responses brief and natural
                 - Don't mention being AI or chatbot
+                - If user seems satisfied with image, ask if they'd like another or a modification
               `.trim();
               
               const result = await model.generateContent({
@@ -519,3 +565,4 @@ serve(async (req) => {
     });
   }
 });
+
