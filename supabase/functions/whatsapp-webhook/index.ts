@@ -1,7 +1,7 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
+import Replicate from "https://esm.sh/replicate@0.25.2"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,6 +32,95 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
     const text = msg.content.text || '[media content]';
     return `${role}: ${text}`;
   }).join('\n');
+}
+
+async function generateImageWithReplicate(prompt: string) {
+  const replicate = new Replicate({
+    auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
+  });
+
+  console.log("Generating image with prompt:", prompt);
+  try {
+    const output = await replicate.run(
+      "black-forest-labs/flux-schnell",
+      {
+        input: {
+          prompt: prompt,
+          go_fast: true,
+          megapixels: "1",
+          num_outputs: 1,
+          aspect_ratio: "1:1",
+          output_format: "webp",
+          output_quality: 80,
+          num_inference_steps: 4
+        }
+      }
+    );
+    console.log("Generation response:", output);
+    return output[0]; // Return the first generated image URL
+  } catch (error) {
+    console.error("Error generating image:", error);
+    throw error;
+  }
+}
+
+// Function to send WhatsApp image message
+async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: string) {
+  const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
+  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+
+  const response = await fetch(
+    `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'image',
+        image: {
+          link: imageUrl,
+          caption: caption
+        }
+      }),
+    }
+  );
+
+  const result = await response.json();
+  console.log('WhatsApp API image response:', result);
+  return result;
+}
+
+// Function to send WhatsApp text message
+async function sendWhatsAppMessage(recipient: string, text: string) {
+  const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
+  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+
+  const response = await fetch(
+    `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'text',
+        text: { body: text }
+      }),
+    }
+  );
+
+  const result = await response.json();
+  console.log('WhatsApp API text response:', result);
+  return result;
 }
 
 serve(async (req) => {
@@ -82,34 +171,6 @@ serve(async (req) => {
     // Initialize Gemini AI
     const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? '');
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
-    // Function to send WhatsApp message
-    async function sendWhatsAppMessage(recipient: string, text: string) {
-      const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
-      const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
-
-      const response = await fetch(
-        `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            recipient_type: 'individual',
-            to: recipient,
-            type: 'text',
-            text: { body: text }
-          }),
-        }
-      );
-
-      const result = await response.json();
-      console.log('WhatsApp API response:', result);
-      return result;
-    }
 
     // Handle incoming messages and status updates
     if (req.method === 'POST') {
@@ -201,14 +262,78 @@ serve(async (req) => {
         // Generate AI response for text messages
         if (message.type === 'text') {
           try {
-            console.log('Generating AI response for:', message.text.body)
+            console.log('Processing message:', message.text.body)
             
             // Get conversation history
             const conversationHistory = await getConversationHistory(supabase, userIdData.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
-            // Construct improved prompt with conversation history
-            const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
+            // Determine if this is an image generation request
+            const isImageRequest = message.text.body.toLowerCase().includes('generate image') || 
+                                 message.text.body.toLowerCase().includes('create image') ||
+                                 message.text.body.toLowerCase().includes('make image');
+
+            if (isImageRequest) {
+              // First, use Gemini to optimize the prompt
+              const promptOptimizationPrompt = `
+                I need to generate an image based on this user request: "${message.text.body}"
+                Please create an optimized, clear, and detailed prompt for an AI image generator.
+                The prompt should be descriptive but concise.
+                Just return the optimized prompt, nothing else.
+              `;
+
+              const promptResult = await model.generateContent({
+                contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
+              });
+              
+              const optimizedPrompt = promptResult.response.text().trim();
+              console.log('Optimized prompt:', optimizedPrompt);
+
+              // Send a status message
+              await sendWhatsAppMessage(
+                sender.wa_id,
+                "I'm generating your image now... This might take a few seconds."
+              );
+
+              // Generate the image using Replicate
+              const imageUrl = await generateImageWithReplicate(optimizedPrompt);
+              console.log('Generated image URL:', imageUrl);
+
+              // Send the image back via WhatsApp
+              const whatsappResponse = await sendWhatsAppImage(
+                sender.wa_id,
+                imageUrl,
+                "Here's your generated image! 🎨"
+              );
+
+              // Store the response in the database
+              const aiMessageData = {
+                whatsapp_message_id: whatsappResponse.messages[0].id,
+                user_id: userIdData.id,
+                direction: 'outgoing',
+                message_type: 'image',
+                content: { 
+                  image: {
+                    url: imageUrl,
+                    caption: "Here's your generated image! 🎨"
+                  }
+                },
+                status: 'sent',
+                created_at: new Date().toISOString()
+              }
+
+              const { error: aiMessageError } = await supabase
+                .from('messages')
+                .insert(aiMessageData)
+
+              if (aiMessageError) {
+                console.error('Error storing AI message:', aiMessageError)
+                throw aiMessageError
+              }
+
+            } else {
+              // Handle regular text message with Gemini AI
+              const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
 
 Previous conversation:
 ${conversationHistory}
@@ -222,44 +347,49 @@ Important instructions:
 - Don't say you can't remember - use the conversation history provided
 - Respond naturally as if you were in an ongoing conversation
 - Keep responses brief and to the point`;
-            
-            // Generate content using Gemini AI
-            const result = await model.generateContent({
-              contents: [{
-                parts: [{ text: prompt }]
-              }]
-            });
-            
-            const response = await result.response;
-            const aiResponse = response.text();
-            
-            console.log('AI generated response:', aiResponse)
+              
+              const result = await model.generateContent({
+                contents: [{
+                  parts: [{ text: prompt }]
+                }]
+              });
+              
+              const response = await result.response;
+              const aiResponse = response.text();
+              
+              console.log('AI generated response:', aiResponse)
 
-            // Send AI response back via WhatsApp
-            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
-            
-            // Store AI response in database
-            const aiMessageData = {
-              whatsapp_message_id: whatsappResponse.messages[0].id,
-              user_id: userIdData.id,
-              direction: 'outgoing',
-              message_type: 'text',
-              content: { text: aiResponse },
-              status: 'sent',
-              created_at: new Date().toISOString()
-            }
+              // Send AI response back via WhatsApp
+              const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
+              
+              // Store AI response in database
+              const aiMessageData = {
+                whatsapp_message_id: whatsappResponse.messages[0].id,
+                user_id: userIdData.id,
+                direction: 'outgoing',
+                message_type: 'text',
+                content: { text: aiResponse },
+                status: 'sent',
+                created_at: new Date().toISOString()
+              }
 
-            const { error: aiMessageError } = await supabase
-              .from('messages')
-              .insert(aiMessageData)
+              const { error: aiMessageError } = await supabase
+                .from('messages')
+                .insert(aiMessageData)
 
-            if (aiMessageError) {
-              console.error('Error storing AI message:', aiMessageError)
-              throw aiMessageError
+              if (aiMessageError) {
+                console.error('Error storing AI message:', aiMessageError)
+                throw aiMessageError
+              }
             }
 
           } catch (error) {
             console.error('Error generating or sending AI response:', error)
+            // Send error message to user
+            await sendWhatsAppMessage(
+              sender.wa_id,
+              "I apologize, but I encountered an error while processing your request. Please try again later."
+            );
             throw error
           }
         }
