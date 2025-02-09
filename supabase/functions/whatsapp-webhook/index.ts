@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -234,11 +235,13 @@ You can make a similar image by using keywords like:
 - "Add more details"
 - "Now show it in winter"
 - "Generate it with different colors"
-- "Create it in a different style"
-- "Turn it into anime style"
-- "Show me the same but more realistic"
 
-Remember to always use keywords like "make", "change", "show", or "create" in your requests!`
+*If the new images are too similar and you want something completely different, create a new image by using the keywords (Create, make, give me, etc..)  Examples:
+
+"Create a cute puppy"
+"Make me a dragon"
+"I want a picture of mountains"
+"Give me an image of space"`
           }
         }),
       }
