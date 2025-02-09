@@ -12,7 +12,7 @@ const corsHeaders = {
 async function getConversationHistory(supabase: any, userId: string, limit = 5) {
   const { data: messages, error } = await supabase
     .from('messages')
-    .select('direction, content, created_at')
+    .select('direction, content, message_type, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -27,11 +27,28 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
   // Reverse to get chronological order
   const orderedMessages = messages.reverse();
   
-  return orderedMessages.map(msg => {
-    const role = msg.direction === 'incoming' ? 'User' : 'Assistant';
-    const text = msg.content.text || '[media content]';
-    return `${role}: ${text}`;
-  }).join('\n');
+  return orderedMessages
+    .filter(msg => {
+      // Filter out system messages and invalid content
+      if (msg.direction === 'outgoing' && msg.content.text?.includes('Processing your image...')) {
+        return false;
+      }
+      return true;
+    })
+    .map(msg => {
+      const role = msg.direction === 'incoming' ? 'User' : 'Assistant';
+      let content = '';
+      
+      if (msg.message_type === 'text' && msg.content.text) {
+        content = msg.content.text;
+      } else if (msg.message_type === 'image') {
+        content = '[Generated image]';
+      }
+      
+      return content ? `${role}: ${content}` : null;
+    })
+    .filter(Boolean) // Remove null entries
+    .join('\n');
 }
 
 async function generateImageWithReplicate(prompt: string) {
@@ -362,23 +379,46 @@ serve(async (req) => {
               message.text.body.toLowerCase().includes(keyword)
             );
 
-            // Check if this is a follow-up image request based on context
+            // Improved follow-up request detection
             const isImageContext = userContext.last_interaction_type === 'image_generation';
-            const followUpKeywords = ['make it', 'change it to', 'i want', 'instead', 'but'];
-            const isFollowUpRequest = isImageContext && followUpKeywords.some(keyword =>
-              message.text.body.toLowerCase().includes(keyword)
-            );
+            const followUpKeywords = ['make it', 'change it to', 'instead', 'but with', 'but make it'];
+            const isFollowUpRequest = isImageContext && 
+              (followUpKeywords.some(keyword => message.text.body.toLowerCase().includes(keyword)) ||
+               message.text.body.toLowerCase().startsWith('but') ||
+               message.text.body.toLowerCase().startsWith('and'));
 
             if (isDirectImageRequest || isFollowUpRequest) {
               let promptText = message.text.body;
 
-              // If it's a follow-up request, combine with previous context
+              // Handle follow-up requests more intelligently
               if (isFollowUpRequest && userContext.last_image_context) {
                 const previousPrompt = userContext.last_image_context.prompt;
-                promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
+                
+                // Extract the modification part
+                let modification = message.text.body;
+                followUpKeywords.forEach(keyword => {
+                  if (modification.toLowerCase().startsWith(keyword)) {
+                    modification = modification.slice(keyword.length).trim();
+                  }
+                });
+                
+                // Combine with previous context more naturally
+                promptText = `${modification} (maintaining style and quality from previous image: ${previousPrompt})`;
+              } else {
+                // For new requests, clear any previous context influence
+                const { error: contextResetError } = await supabase
+                  .from('whatsapp_users')
+                  .update({
+                    last_image_context: null
+                  })
+                  .eq('id', userContext.id);
+
+                if (contextResetError) {
+                  console.error('Error resetting context:', contextResetError);
+                }
               }
 
-              // First, use Gemini to optimize the prompt
+              // Use the improved prompt template
               const promptOptimizationPrompt = `
 You are an expert in creating prompts for the FLUX image generation model. Analyze this user request and convert it into a high-quality image generation prompt:
 "${promptText}"
@@ -417,7 +457,7 @@ Just return the optimized prompt text, nothing else.`;
               const optimizedPrompt = promptResult.response.text().trim();
               console.log('Optimized prompt:', optimizedPrompt);
 
-              // Update user's context
+              // Update user's context with new prompt
               const { error: contextError } = await supabase
                 .from('whatsapp_users')
                 .update({
