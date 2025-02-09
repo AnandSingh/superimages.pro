@@ -39,8 +39,24 @@ async function generateImageWithReplicate(prompt: string) {
     auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
   });
 
-  console.log("Generating image with prompt:", prompt);
+  console.log("Starting image generation with prompt:", prompt);
+  console.log("Replicate API Key present:", !!Deno.env.get('REPLICATE_API_KEY'));
+  
   try {
+    console.log("Making Replicate API call with configuration:", {
+      model: "black-forest-labs/flux-schnell",
+      input: {
+        prompt,
+        go_fast: true,
+        megapixels: "1",
+        num_outputs: 1,
+        aspect_ratio: "1:1",
+        output_format: "webp",
+        output_quality: 80,
+        num_inference_steps: 4
+      }
+    });
+
     const output = await replicate.run(
       "black-forest-labs/flux-schnell",
       {
@@ -56,10 +72,22 @@ async function generateImageWithReplicate(prompt: string) {
         }
       }
     );
-    console.log("Generation response:", output);
-    return output[0]; // Return the first generated image URL
+    
+    console.log("Raw Replicate API response:", JSON.stringify(output));
+    
+    if (!output || !Array.isArray(output) || output.length === 0) {
+      console.error("Invalid response format from Replicate:", output);
+      throw new Error("Invalid response from image generation API");
+    }
+
+    console.log("Generated image URL:", output[0]);
+    return output[0];
   } catch (error) {
-    console.error("Error generating image:", error);
+    console.error("Detailed error in generateImageWithReplicate:", {
+      error: error,
+      message: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -169,7 +197,7 @@ serve(async (req) => {
     )
 
     // Initialize Gemini AI
-    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? '');
+    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
     // Handle incoming messages and status updates
@@ -182,6 +210,13 @@ serve(async (req) => {
         const message = body.entry[0].changes[0].value.messages[0]
         const sender = body.entry[0].changes[0].value.contacts[0]
         
+        console.log("Processing incoming message:", {
+          messageId: message.id,
+          type: message.type,
+          sender: sender.wa_id,
+          timestamp: message.timestamp
+        });
+
         // Create or update WhatsApp user
         const { data: userData, error: userError } = await supabase
           .from('whatsapp_users')
@@ -262,7 +297,7 @@ serve(async (req) => {
         // Generate AI response for text messages
         if (message.type === 'text') {
           try {
-            console.log('Processing message:', message.text.body)
+            console.log('Processing message:', message.text.body);
             
             // Get conversation history
             const conversationHistory = await getConversationHistory(supabase, userIdData.id);
@@ -305,7 +340,7 @@ serve(async (req) => {
                 imageUrl,
                 "Here's your generated image! 🎨"
               );
-
+              
               // Store the response in the database
               const aiMessageData = {
                 whatsapp_message_id: whatsappResponse.messages[0].id,
