@@ -620,48 +620,24 @@ serve(async (req) => {
             const conversationHistory = await getConversationHistory(supabase, userContext.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
-            // Check if this is an image generation request
-            const isDirectImageRequest = isImageRequest(message.text.body);
-
-            // Check if this is a follow-up image request based on context
-            const isImageContext = userContext.last_interaction_type === 'image_generation';
-            const followUpKeywords = ['make it', 'change it to', 'i want', 'instead', 'but'];
-            const isFollowUpRequest = isImageContext && followUpKeywords.some(keyword =>
-              message.text.body.toLowerCase().includes(keyword)
+            // Analyze the message
+            const analysis = await analyzeUserMessage(
+              message.text.body,
+              conversationHistory,
+              userContext.last_interaction_type,
+              userContext.last_image_context
             );
+            
+            console.log('Message analysis:', analysis);
 
-            if (isDirectImageRequest || isFollowUpRequest) {
-              let promptText = message.text.body;
-
-              // If it's a follow-up request, combine with previous context
-              if (isFollowUpRequest && userContext.last_image_context) {
-                const previousPrompt = userContext.last_image_context.prompt;
-                promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
-              }
-
-              // First, use Gemini to optimize the prompt
-              const promptOptimizationPrompt = `
-                I need to generate an image based on this user request: "${promptText}"
-                ${isFollowUpRequest ? "This is a modification of a previous image request." : ""}
-                Please create an optimized, clear, and detailed prompt for an AI image generator.
-                The prompt should be descriptive but concise.
-                Just return the optimized prompt, nothing else.
-              `;
-
-              const promptResult = await model.generateContent({
-                contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
-              });
-              
-              const optimizedPrompt = promptResult.response.text().trim();
-              console.log('Optimized prompt:', optimizedPrompt);
-
+            if (analysis.intent === 'image_generation' || analysis.intent === 'image_modification') {
               // Update user's context
               const { error: contextError } = await supabase
                 .from('whatsapp_users')
                 .update({
                   last_interaction_type: 'image_generation',
                   last_image_context: {
-                    prompt: optimizedPrompt,
+                    prompt: analysis.suggestedPrompt || message.text.body,
                     timestamp: new Date().toISOString()
                   }
                 })
@@ -672,66 +648,15 @@ serve(async (req) => {
                 throw contextError;
               }
 
-              // Send a status message
-              await sendWhatsAppMessage(
-                sender.wa_id,
-                "I'm generating your image now... This might take a few seconds. 🎨"
+              // Handle image generation
+              await handleImageGeneration(
+                analysis,
+                message.text.body,
+                sender,
+                userContext
               );
-
-              // Generate the image using Replicate
-              const imageUrl = await generateImageWithReplicate(optimizedPrompt);
-              console.log('Generated image URL:', imageUrl);
-
-              // Send the image back via WhatsApp
-              const whatsappResponse = await sendWhatsAppImage(
-                sender.wa_id,
-                imageUrl,
-                "Here's your generated image! 🎨"
-              );
-              
-              // Store the response in the database
-              const aiMessageData = {
-                whatsapp_message_id: whatsappResponse.messages[0].id,
-                user_id: userContext.id,
-                direction: 'outgoing',
-                message_type: 'image',
-                content: { 
-                  image: {
-                    url: imageUrl,
-                    caption: "Here's your generated image! 🎨"
-                  }
-                },
-                status: 'sent',
-                created_at: new Date().toISOString()
-              }
-
-              const { error: aiMessageError } = await supabase
-                .from('messages')
-                .insert(aiMessageData)
-
-              if (aiMessageError) {
-                console.error('Error storing AI message:', aiMessageError)
-                throw aiMessageError
-              }
-
             } else {
-              // Reset image context if it's a regular conversation
-              if (userContext.last_interaction_type === 'image_generation') {
-                const { error: contextError } = await supabase
-                  .from('whatsapp_users')
-                  .update({
-                    last_interaction_type: 'conversation',
-                    last_image_context: null
-                  })
-                  .eq('id', userContext.id);
-
-                if (contextError) {
-                  console.error('Error updating user context:', contextError);
-                  throw contextError;
-                }
-              }
-
-              // Handle regular text message with Gemini AI
+              // Handle regular conversation with Gemini AI
               const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
 
 Previous conversation:
@@ -746,7 +671,7 @@ Important instructions:
 - Don't say you can't remember - use the conversation history provided
 - Respond naturally as if you were in an ongoing conversation
 - Keep responses brief and to the point`;
-              
+            
               const result = await model.generateContent({
                 contents: [{
                   parts: [{ text: prompt }]
