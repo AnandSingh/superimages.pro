@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -55,49 +54,52 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
     .join('\n');
 }
 
-const helpfulImageRequestGuide = `I can generate any image you want! Just use phrases like:
-- "I want a picture of..."
+const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
+
+To generate images, please use keywords like:
 - "Show me..."
 - "Generate..."
 - "Create..."
-
-Or to change an existing image, try:
-- "Make it more..."
-- "Change it to..."
-- "Now make it..."
-- "Now show me..."
+- "Make me..."
+- "I want a picture of..."
+- "Give me an image of..."
 
 For example:
-"Show me superheroes"
-"Now make them more colorful"
-"Generate a landscape"`;
+"Show me a beach sunset"
+"Generate a fantasy castle"
+"Make me a cute puppy"
+"I want a picture of mountains"`;
 
 const INITIAL_GREETING = `Hi! I'm an AI image generator that can create any image you imagine! 🎨
+
+Important: I understand you best when you use keywords like "show me", "create", "generate", or "make" in your requests.
 
 Try these example commands:
 "Show me a magical forest"
 "Generate a futuristic city"
 "Create a cute puppy"
-
-Or just say what you want to see, like:
-"I want an image of mountains"
-"Show me space nebulas"
-"Make a dragon"`;
+"Make me a dragon"
+"I want a picture of mountains"
+"Give me an image of space"`;
 
 const HOW_IT_WORKS_GUIDE = `I can generate any kind of image you want! Here's how to use me:
 
+Important: I need specific keywords to understand your requests!
+
 1. New Images:
-Just use phrases like:
+Always start with keywords like:
 - "Show me..."
-- "I want a picture of..."
 - "Generate..."
 - "Create..."
+- "Make me..."
+- "I want..."
+- "Give me..."
 
-2. Modify Images:
-After I create an image, you can modify it:
-- "Make it more colorful"
-- "Change it to night time"
-- "Add more details"
+For example:
+"Show me a sunset"
+"Generate a sci-fi city"
+"I want a picture of mountains"
+"Make me a fantasy castle"
 
 Try it now! What would you like me to create?`;
 
@@ -224,7 +226,19 @@ async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: 
           type: 'image',
           image: {
             link: imageUrl,
-            caption: caption || ''
+            caption: `Here's your generated image! 🎨
+
+You can make a similar image by using keywords like:
+- "Make it more vibrant"
+- "Change it to night time"
+- "Add more details"
+- "Now show it in winter"
+- "Generate it with different colors"
+- "Create it in a different style"
+- "Turn it into anime style"
+- "Show me the same but more realistic"
+
+Remember to always use keywords like "make", "change", "show", or "create" in your requests!`
           }
         }),
       }
