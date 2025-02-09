@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -6,6 +5,55 @@ import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// Category mapping for natural language to enum values
+const categoryMap: Record<string, Database["public"]["Enums"]["expense_category"]> = {
+  'food': 'restaurant',
+  'meal': 'restaurant',
+  'ice cream': 'restaurant',
+  'lunch': 'restaurant',
+  'dinner': 'restaurant',
+  'breakfast': 'restaurant',
+  'snack': 'restaurant',
+  'grocery': 'groceries',
+  'groceries': 'groceries',
+  'supermarket': 'groceries',
+  'transport': 'transport',
+  'bus': 'transport',
+  'taxi': 'transport',
+  'uber': 'transport',
+  'entertainment': 'entertainment',
+  'movie': 'entertainment',
+  'game': 'entertainment',
+  'utility': 'utilities',
+  'bill': 'utilities',
+  'electricity': 'utilities',
+  'water': 'utilities',
+  'shopping': 'shopping',
+  'clothes': 'shopping',
+  'shoes': 'shopping',
+  'other': 'other'
+};
+
+// Map natural language categories to enum values
+function mapToValidCategory(category: string): Database["public"]["Enums"]["expense_category"] {
+  const lowercaseCategory = category.toLowerCase();
+  
+  // Direct match
+  if (categoryMap[lowercaseCategory]) {
+    return categoryMap[lowercaseCategory];
+  }
+  
+  // Fuzzy match - find the closest category
+  for (const [key, value] of Object.entries(categoryMap)) {
+    if (lowercaseCategory.includes(key)) {
+      return value;
+    }
+  }
+  
+  // Default fallback
+  return 'other';
 }
 
 // Enhanced conversation history with context
@@ -31,12 +79,11 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
   const orderedMessages = messages.reverse();
   console.log(`Found ${orderedMessages.length} messages in history`);
   
-  // Enhanced context-aware message formatting
   return orderedMessages.map(msg => {
     const role = msg.direction === 'incoming' ? 'User' : 'Assistant';
     const text = msg.content.text || '[media content]';
     const context = msg.conversation_context ? 
-      `[Context: ${msg.conversation_context.conversation_flow || 'general'}]` : '';
+      `[Context: ${JSON.stringify(msg.conversation_context)}]` : '';
     return `${role}${context}: ${text}`;
   }).join('\n');
 }
@@ -111,11 +158,15 @@ async function storeExpense(supabase: any, userId: string, expenseData: ExpenseD
   console.log(`Storing expense for user ${userId}:`, expenseData);
   
   try {
+    // Validate category
+    const validCategory = mapToValidCategory(expenseData.category || 'other');
+    console.log(`Mapped category '${expenseData.category}' to '${validCategory}'`);
+
     const { error } = await supabase
       .from('expenses')
       .insert({
         amount: expenseData.amount,
-        category: expenseData.category || 'other',
+        category: validCategory,
         description: expenseData.description,
         date: expenseData.date || new Date().toISOString(),
         user_id: userId
@@ -246,27 +297,32 @@ async function sendWhatsAppMessage(recipient: string, text: string) {
 
   console.log(`Sending WhatsApp message to ${recipient}`);
 
-  const response = await fetch(
-    `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: recipient,
-        type: 'text',
-        text: { body: text }
-      }),
-    }
-  );
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: recipient,
+          type: 'text',
+          text: { body: text }
+        }),
+      }
+    );
 
-  const result = await response.json();
-  console.log('WhatsApp API response:', result);
-  return result;
+    const result = await response.json();
+    console.log('WhatsApp API response:', result);
+    return result;
+  } catch (error) {
+    console.error('Error sending WhatsApp message:', error);
+    throw error;
+  }
 }
 
 serve(async (req) => {
@@ -304,7 +360,7 @@ serve(async (req) => {
 
         const messageContent = message.type === 'text' ? { text: message.text.body } : message[message.type]
         
-        // Store incoming message with null context initially
+        // Store incoming message
         const { error: messageError } = await supabase
           .from('messages')
           .insert({
@@ -332,43 +388,29 @@ serve(async (req) => {
 3. Offering financial advice and general conversation
 
 IMPORTANT CONTEXT RULES:
-- "Save money" or "money tips" = financial_advice type
-- Only classify as expense if there's a clear indication of spending (numbers, amounts)
-- Only provide totals when explicitly asked about expenses or summaries
-- Default to conversation type unless clearly about expenses or queries
+- "Save money" or "money tips" = FINANCIAL_ADVICE type
+- Only classify as RECORD_EXPENSE if there's a clear indication of spending (numbers, amounts)
+- Only provide totals when explicitly asked about expenses or summaries (QUERY_EXPENSES)
+- Default to CONVERSATION type unless clearly about expenses or queries
 
 Format your entire response as a JSON object with this structure:
 
 {
   "metadata": {
-    "type": "expense" | "query" | "financial_advice" | "clarification" | "conversation",
+    "type": "RECORD_EXPENSE" | "QUERY_EXPENSES" | "FINANCIAL_ADVICE" | "CLARIFICATION" | "CONVERSATION",
     "timestamp": "current ISO timestamp",
     "context": {
       "previous_topic": string | null,
       "conversation_flow": string,
       "last_action": string | null,
-      "confidence_score": number
-    },
-    "queryMetadata": {
-      "type": "total" | "category" | "timeframe",
-      "timeframe": "today" | "week" | "month",
-      "category": string
-    },
-    "expenseData": {
-      "amount": number,
-      "category": string,
-      "description": string,
-      "date": string
+      "confidence_score": number,
+      "extracted_amount": number | null,
+      "extracted_category": string | null,
+      "extracted_description": string | null
     }
   },
   "message": "your natural response here"
 }
-
-Analyze the user's intent carefully:
-1. Is this about a specific expense? (must include amount)
-2. Is this explicitly requesting expense information?
-3. Is this general financial discussion?
-4. Is this casual conversation?
 
 Previous conversation:
 ${conversationHistory}
@@ -391,22 +433,32 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
             }
 
             let responseMessage = parsedResponse.message;
+            const context = parsedResponse.metadata.context;
 
-            // Handle different types with context
+            // Handle different types with enhanced context
             switch (parsedResponse.metadata.type) {
-              case 'expense':
-                if (parsedResponse.metadata.expenseData) {
-                  const stored = await storeExpense(supabase, userIdData.id, parsedResponse.metadata.expenseData);
+              case 'RECORD_EXPENSE':
+                if (context.extracted_amount && (context.extracted_category || context.extracted_description)) {
+                  const stored = await storeExpense(supabase, userIdData.id, {
+                    amount: context.extracted_amount,
+                    category: context.extracted_category || 'other',
+                    description: context.extracted_description || 'Unspecified expense'
+                  });
+                  
                   if (!stored) {
-                    responseMessage = "Sorry, I couldn't save your expense. Please try again.";
-                    parsedResponse.metadata.context.last_action = 'expense_failed';
+                    responseMessage = "I couldn't save your expense. Please make sure to include both the amount and category/description. For example: 'I spent $20 on lunch'";
+                    context.last_action = 'expense_failed';
                   } else {
-                    parsedResponse.metadata.context.last_action = 'expense_stored';
+                    responseMessage = `Great! I've recorded your expense of $${context.extracted_amount} for ${context.extracted_description || context.extracted_category}.`;
+                    context.last_action = 'expense_stored';
                   }
+                } else {
+                  responseMessage = "I noticed you're trying to record an expense. Please include both the amount and what it was for. For example: 'I spent $20 on lunch'";
+                  context.last_action = 'expense_incomplete';
                 }
                 break;
 
-              case 'query':
+              case 'QUERY_EXPENSES':
                 if (parsedResponse.metadata.queryMetadata) {
                   const summary = await getExpenseSummary(
                     supabase, 
@@ -415,7 +467,7 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
                     parsedResponse.metadata.queryMetadata.category
                   );
                   responseMessage = summary;
-                  parsedResponse.metadata.context.last_action = 'summary_provided';
+                  context.last_action = 'summary_provided';
                 }
                 break;
 
@@ -436,7 +488,7 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
 
             const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, responseMessage);
             
-            // Store AI response with context
+            // Store AI response with enhanced context
             const { error: aiMessageError } = await supabase
               .from('messages')
               .insert({
@@ -446,8 +498,9 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
                 message_type: 'text',
                 content: { text: responseMessage },
                 status: 'sent',
-                conversation_context: parsedResponse.metadata.context,
-                created_at: new Date().toISOString()
+                conversation_context: context,
+                created_at: new Date().toISOString(),
+                intent: parsedResponse.metadata.type
               })
 
             if (aiMessageError) {
@@ -459,8 +512,8 @@ Wrap your JSON response between \`\`\`json and \`\`\` markers.`;
             const { error: updateError } = await supabase
               .from('messages')
               .update({
-                conversation_context: parsedResponse.metadata.context,
-                intent: parsedResponse.metadata.type.toUpperCase()
+                conversation_context: context,
+                intent: parsedResponse.metadata.type
               })
               .eq('whatsapp_message_id', message.id)
 
