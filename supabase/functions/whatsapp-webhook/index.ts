@@ -344,9 +344,23 @@ serve(async (req) => {
             console.log('Retrieved conversation history:', conversationHistory);
             
             // Determine if this is an image generation request
-            const isImageRequest = message.text.body.toLowerCase().includes('generate image') || 
-                                 message.text.body.toLowerCase().includes('create image') ||
-                                 message.text.body.toLowerCase().includes('make image');
+            const imageKeywords = [
+              'generate image',
+              'create image',
+              'make image',
+              'create an image',
+              'generate an image',
+              'make an image',
+              'image of',
+              'picture of',
+              'draw',
+              'create a picture',
+              'generate a picture'
+            ];
+            
+            const isImageRequest = imageKeywords.some(keyword => 
+              message.text.body.toLowerCase().includes(keyword)
+            );
 
             if (isImageRequest) {
               // First, use Gemini to optimize the prompt
