@@ -8,27 +8,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Quick response patterns for common messages
-const QUICK_RESPONSES = new Map([
-  ['hi', 'Hello! How can I help you today? 👋'],
-  ['hello', 'Hi there! How can I assist you? 👋'],
-  ['hey', 'Hello! What can I do for you? 👋'],
-  ['thanks', "You're welcome! 😊"],
-  ['thank you', "You're welcome! Let me know if you need anything else 😊"],
-  ['ok', '👍'],
-  ['hmm', null], // Don't respond to simple acknowledgments
-]);
-
-// Simple check for potential image requests
-function isPotentialImageRequest(text: string): boolean {
-  const imageKeywords = [
-    'image', 'picture', 'photo', 'draw', 'generate',
-    'create', 'make', 'show', 'like', 'want'
-  ];
-  const lowerText = text.toLowerCase();
-  return imageKeywords.some(keyword => lowerText.includes(keyword));
-}
-
 // Function to format conversation history
 async function getConversationHistory(supabase: any, userId: string, limit = 5) {
   const { data: messages, error } = await supabase
@@ -45,7 +24,9 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
 
   if (!messages || messages.length === 0) return '';
 
+  // Reverse to get chronological order
   const orderedMessages = messages.reverse();
+  
   return orderedMessages.map(msg => {
     const role = msg.direction === 'incoming' ? 'User' : 'Assistant';
     const text = msg.content.text || '[media content]';
@@ -53,147 +34,65 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
   }).join('\n');
 }
 
-// Simplified message analysis for potential image requests
-async function quickAnalyzeMessage(text: string, lastImageContext: any): Promise<{
-  isImageRequest: boolean;
-  isFollowUp: boolean;
-  needsFullAnalysis: boolean;
-}> {
-  const lowerText = text.toLowerCase();
+async function generateImageWithReplicate(prompt: string) {
+  const replicate = new Replicate({
+    auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
+  });
+
+  console.log("Starting image generation with prompt:", prompt);
   
-  // Check if it's a follow-up to previous image
-  const isFollowUp = lastImageContext && (
-    lowerText.startsWith('make it') ||
-    lowerText.startsWith('change it') ||
-    lowerText.startsWith('now') ||
-    lowerText.includes('instead') ||
-    lowerText.includes('but')
-  );
-
-  // Determine if it needs full analysis
-  const isImageRequest = isPotentialImageRequest(text);
-  const needsFullAnalysis = isImageRequest || isFollowUp;
-
-  return {
-    isImageRequest,
-    isFollowUp,
-    needsFullAnalysis
-  };
-}
-
-// Simplified analysis for common image generation patterns
-function detectImageType(prompt: string): 'portrait' | 'landscape' | 'product' | 'artistic' | 'default' {
-  const promptLower = prompt.toLowerCase();
-  
-  if (promptLower.includes('portrait') || promptLower.includes('person')) return 'portrait';
-  if (promptLower.includes('landscape') || promptLower.includes('scenery')) return 'landscape';
-  if (promptLower.includes('product') || promptLower.includes('item')) return 'product';
-  if (promptLower.includes('artistic') || promptLower.includes('abstract')) return 'artistic';
-  
-  return 'default';
-}
-
-// Optimized image generation parameters
-const imageTypeParams: Record<string, any> = {
-  portrait: {
-    megapixels: "1",
-    aspect_ratio: "3:4",
-    num_inference_steps: 6,
-    output_quality: 95,
-    go_fast: true
-  },
-  landscape: {
-    megapixels: "1.5",
-    aspect_ratio: "16:9",
-    num_inference_steps: 4,
-    output_quality: 90,
-    go_fast: true
-  },
-  product: {
-    megapixels: "1",
-    aspect_ratio: "1:1",
-    num_inference_steps: 5,
-    output_quality: 95,
-    go_fast: true
-  },
-  artistic: {
-    megapixels: "1",
-    aspect_ratio: "1:1",
-    num_inference_steps: 3,
-    output_quality: 85,
-    go_fast: true
-  },
-  default: {
-    megapixels: "1",
-    aspect_ratio: "1:1",
-    num_inference_steps: 4,
-    output_quality: 90,
-    go_fast: true
-  }
-};
-
-// Simplified WhatsApp message sending
-async function sendWhatsAppMessage(recipient: string, text: string) {
-  const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
-  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
-
-  const response = await fetch(
-    `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: recipient,
-        type: 'text',
-        text: { body: text }
-      }),
-    }
-  );
-
-  const result = await response.json();
-  console.log('WhatsApp API text response:', result);
-  return result;
-}
-
-// Optimized image generation handler
-async function generateAndSendImage(prompt: string, recipient: string, imageType: string) {
   try {
-    console.log("Starting image generation with prompt:", prompt);
-    
-    const replicate = new Replicate({
-      auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
+    console.log("Making Replicate API call with configuration:", {
+      model: "black-forest-labs/flux-schnell",
+      input: {
+        prompt,
+        go_fast: true,
+        megapixels: "1",
+        num_outputs: 1,
+        aspect_ratio: "1:1",
+        output_format: "png", // Changed from webp to png for better compatibility
+        output_quality: 90,
+        num_inference_steps: 4
+      }
     });
-    
-    const params = imageTypeParams[imageType] || imageTypeParams.default;
-    
+
     const output = await replicate.run(
       "black-forest-labs/flux-schnell",
       {
         input: {
           prompt: prompt,
-          ...params,
+          go_fast: true,
+          megapixels: "1",
           num_outputs: 1,
-          output_format: "png"
+          aspect_ratio: "1:1",
+          output_format: "png", // Changed from webp to png
+          output_quality: 90,
+          num_inference_steps: 4
         }
       }
     );
     
+    console.log("Raw Replicate API response:", JSON.stringify(output));
+    
     if (!output || !Array.isArray(output) || output.length === 0) {
+      console.error("Invalid response format from Replicate:", output);
       throw new Error("Invalid response from image generation API");
     }
 
+    // Validate the URL
     const imageUrl = output[0];
-    await sendWhatsAppImage(recipient, imageUrl, "Here's your generated image! 🎨");
-    
+    if (!imageUrl || !imageUrl.startsWith('https://')) {
+      throw new Error("Invalid image URL generated");
+    }
+
+    console.log("Generated image URL:", imageUrl);
     return imageUrl;
   } catch (error) {
-    console.error("Error generating image:", error);
-    await sendWhatsAppMessage(recipient, "I'm sorry, I couldn't generate that image. Could you try describing it differently?");
+    console.error("Detailed error in generateImageWithReplicate:", {
+      error: error,
+      message: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -264,14 +163,56 @@ async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: 
   }
 }
 
+// Function to send WhatsApp text message
+async function sendWhatsAppMessage(recipient: string, text: string) {
+  const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
+  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+
+  const response = await fetch(
+    `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'text',
+        text: { body: text }
+      }),
+    }
+  );
+
+  const result = await response.json();
+  console.log('WhatsApp API text response:', result);
+  return result;
+}
+
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
+  const url = new URL(req.url)
+  console.log('Webhook request:', {
+    method: req.method,
+    pathname: url.pathname,
+    searchParams: Object.fromEntries(url.searchParams)
+  })
+
   try {
-    const url = new URL(req.url);
-    
+    // Test endpoint to verify the function is accessible
+    if (url.pathname === '/test') {
+      console.log('Test endpoint called')
+      return new Response(JSON.stringify({ status: 'ok', message: 'Webhook is operational' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     // Handle verification request
     if (req.method === 'GET') {
       const mode = url.searchParams.get('hub.mode')
@@ -289,27 +230,34 @@ serve(async (req) => {
       return new Response('Forbidden', { status: 403 })
     }
 
-    if (req.method === 'POST') {
-      const body = await req.json();
-      console.log('Received webhook:', JSON.stringify(body, null, 2));
+    // Initialize Supabase client
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
 
+    // Initialize Gemini AI
+    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+    // Handle incoming messages and status updates
+    if (req.method === 'POST') {
+      const body = await req.json()
+      console.log('Received webhook:', JSON.stringify(body, null, 2))
+
+      // Process messages
       if (body.entry?.[0]?.changes?.[0]?.value?.messages) {
-        const message = body.entry[0].changes[0].value.messages[0];
-        const sender = body.entry[0].changes[0].value.contacts[0];
+        const message = body.entry[0].changes[0].value.messages[0]
+        const sender = body.entry[0].changes[0].value.contacts[0]
         
-        console.log("Processing message:", {
+        console.log("Processing incoming message:", {
           messageId: message.id,
           type: message.type,
-          sender: sender.wa_id
+          sender: sender.wa_id,
+          timestamp: message.timestamp
         });
 
-        // Initialize Supabase client
-        const supabase = createClient(
-          Deno.env.get('SUPABASE_URL') ?? '',
-          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        );
-
-        // Handle user data
+        // Create or update WhatsApp user
         const { data: userData, error: userError } = await supabase
           .from('whatsapp_users')
           .upsert({
@@ -319,129 +267,298 @@ serve(async (req) => {
             last_active: new Date().toISOString()
           }, {
             onConflict: 'phone_number'
-          });
+          })
 
-        // Get user context
-        const { data: userContext } = await supabase
+        if (userError) {
+          console.error('Error updating user:', userError)
+          throw userError
+        }
+
+        // Get the user data including context
+        const { data: userContext, error: userContextError } = await supabase
           .from('whatsapp_users')
           .select('id, last_interaction_type, last_image_context')
           .eq('phone_number', sender.wa_id)
-          .single();
+          .single()
 
-        // Store incoming message
+        if (userContextError) {
+          console.error('Error getting user context:', userContextError)
+          throw userContextError
+        }
+
+        // Store the message with appropriate content based on type
+        let messageContent = {}
+        if (message.type === 'text') {
+          messageContent = {
+            text: message.text.body
+          }
+        } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+          messageContent = message[message.type]
+        }
+
         const messageData = {
           whatsapp_message_id: message.id,
           user_id: userContext.id,
           direction: 'incoming',
           message_type: message.type,
-          content: message.type === 'text' ? { text: message.text.body } : message[message.type],
+          content: messageContent,
           status: 'received',
           created_at: new Date(parseInt(message.timestamp) * 1000).toISOString()
-        };
+        }
 
-        await supabase.from('messages').insert(messageData);
+        console.log('Storing message:', messageData)
 
-        // Handle text messages
-        if (message.type === 'text') {
-          const messageText = message.text.body.trim();
-          
-          // Check for quick response
-          const quickResponse = QUICK_RESPONSES.get(messageText.toLowerCase());
-          if (quickResponse !== undefined) {
-            if (quickResponse) {
-              await sendWhatsAppMessage(sender.wa_id, quickResponse);
-            }
-            return new Response(JSON.stringify({ success: true }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
+        const { error: messageError } = await supabase
+          .from('messages')
+          .insert(messageData)
+
+        if (messageError) {
+          console.error('Error storing message:', messageError)
+          throw messageError
+        }
+
+        // Handle media messages
+        if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+          const { error: mediaError } = await supabase
+            .from('media_assets')
+            .insert({
+              whatsapp_id: message.image?.id || message.video?.id || message.document?.id,
+              type: message.type,
+              mime_type: message[message.type].mime_type,
+              filename: message.document?.filename
+            })
+
+          if (mediaError) {
+            console.error('Error storing media asset:', mediaError)
+            throw mediaError
           }
+        }
 
-          // Quick analysis
-          const quickAnalysis = await quickAnalyzeMessage(
-            messageText,
-            userContext.last_image_context
-          );
-
-          if (quickAnalysis.needsFullAnalysis) {
-            // Initialize Gemini AI
-            const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
-            const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
+        // Generate AI response for text messages
+        if (message.type === 'text') {
+          try {
+            console.log('Processing message:', message.text.body);
+            
+            // Get conversation history
             const conversationHistory = await getConversationHistory(supabase, userContext.id);
+            console.log('Retrieved conversation history:', conversationHistory);
             
-            const analysisPrompt = `Briefly analyze if this message is requesting an image: "${messageText}"
-              Context: ${quickAnalysis.isFollowUp ? `Previous image prompt: ${userContext.last_image_context?.prompt}` : 'New conversation'}
+            // Determine if this is an image generation request
+            const imageKeywords = [
+              'generate image',
+              'create image',
+              'make image',
+              'create an image',
+              'generate an image',
+              'make an image',
+              'image of',
+              'picture of',
+              'draw',
+              'create a picture',
+              'generate a picture'
+            ];
+            
+            const isDirectImageRequest = imageKeywords.some(keyword => 
+              message.text.body.toLowerCase().includes(keyword)
+            );
+
+            // Check if this is a follow-up image request based on context
+            const isImageContext = userContext.last_interaction_type === 'image_generation';
+            const followUpKeywords = ['make it', 'change it to', 'i want', 'instead', 'but'];
+            const isFollowUpRequest = isImageContext && followUpKeywords.some(keyword =>
+              message.text.body.toLowerCase().includes(keyword)
+            );
+
+            if (isDirectImageRequest || isFollowUpRequest) {
+              let promptText = message.text.body;
+
+              // If it's a follow-up request, combine with previous context
+              if (isFollowUpRequest && userContext.last_image_context) {
+                const previousPrompt = userContext.last_image_context.prompt;
+                promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
+              }
+
+              // First, use Gemini to optimize the prompt
+              const promptOptimizationPrompt = `
+                I need to generate an image based on this user request: "${promptText}"
+                ${isFollowUpRequest ? "This is a modification of a previous image request." : ""}
+                Please create an optimized, clear, and detailed prompt for an AI image generator.
+                The prompt should be descriptive but concise.
+                Just return the optimized prompt, nothing else.
+              `;
+
+              const promptResult = await model.generateContent({
+                contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
+              });
               
-              Return only a JSON object with:
-              {
-                "isImageRequest": true/false,
-                "improvedPrompt": "enhanced prompt for better image generation or null",
-                "needsGuidance": true/false,
-                "guidance": "help message if needed or null"
-              }`;
+              const optimizedPrompt = promptResult.response.text().trim();
+              console.log('Optimized prompt:', optimizedPrompt);
 
-            const result = await model.generateContent({
-              contents: [{ parts: [{ text: analysisPrompt }] }]
-            });
-            
-            const analysis = JSON.parse(result.response.text());
+              // Update user's context
+              const { error: contextError } = await supabase
+                .from('whatsapp_users')
+                .update({
+                  last_interaction_type: 'image_generation',
+                  last_image_context: {
+                    prompt: optimizedPrompt,
+                    timestamp: new Date().toISOString()
+                  }
+                })
+                .eq('id', userContext.id);
 
-            if (analysis.isImageRequest) {
-              const imageType = detectImageType(messageText);
-              const finalPrompt = analysis.improvedPrompt || messageText;
+              if (contextError) {
+                console.error('Error updating user context:', contextError);
+                throw contextError;
+              }
 
-              if (analysis.needsGuidance) {
-                await sendWhatsAppMessage(sender.wa_id, analysis.guidance);
-              } else {
-                // Update context and generate image
-                await supabase
+              // Send a status message
+              await sendWhatsAppMessage(
+                sender.wa_id,
+                "I'm generating your image now... This might take a few seconds. 🎨"
+              );
+
+              // Generate the image using Replicate
+              const imageUrl = await generateImageWithReplicate(optimizedPrompt);
+              console.log('Generated image URL:', imageUrl);
+
+              // Send the image back via WhatsApp
+              const whatsappResponse = await sendWhatsAppImage(
+                sender.wa_id,
+                imageUrl,
+                "Here's your generated image! 🎨"
+              );
+              
+              // Store the response in the database
+              const aiMessageData = {
+                whatsapp_message_id: whatsappResponse.messages[0].id,
+                user_id: userContext.id,
+                direction: 'outgoing',
+                message_type: 'image',
+                content: { 
+                  image: {
+                    url: imageUrl,
+                    caption: "Here's your generated image! 🎨"
+                  }
+                },
+                status: 'sent',
+                created_at: new Date().toISOString()
+              }
+
+              const { error: aiMessageError } = await supabase
+                .from('messages')
+                .insert(aiMessageData)
+
+              if (aiMessageError) {
+                console.error('Error storing AI message:', aiMessageError)
+                throw aiMessageError
+              }
+
+            } else {
+              // Reset image context if it's a regular conversation
+              if (userContext.last_interaction_type === 'image_generation') {
+                const { error: contextError } = await supabase
                   .from('whatsapp_users')
                   .update({
-                    last_interaction_type: 'image_generation',
-                    last_image_context: {
-                      prompt: finalPrompt,
-                      timestamp: new Date().toISOString()
-                    }
+                    last_interaction_type: 'conversation',
+                    last_image_context: null
                   })
                   .eq('id', userContext.id);
 
-                await generateAndSendImage(finalPrompt, sender.wa_id, imageType);
+                if (contextError) {
+                  console.error('Error updating user context:', contextError);
+                  throw contextError;
+                }
               }
-            } else {
-              // Handle regular conversation with simpler prompt
-              const conversationPrompt = `You are a helpful assistant. Previous messages:\n${conversationHistory}\n\nUser: ${messageText}\n\nRespond naturally and briefly.`;
+
+              // Handle regular text message with Gemini AI
+              const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
+
+Previous conversation:
+${conversationHistory}
+
+Current message:
+User: ${message.text.body}
+
+Important instructions:
+- Use the conversation history to maintain context
+- Don't mention that you're a chatbot or AI assistant
+- Don't say you can't remember - use the conversation history provided
+- Respond naturally as if you were in an ongoing conversation
+- Keep responses brief and to the point`;
               
-              const response = await model.generateContent({
-                contents: [{ parts: [{ text: conversationPrompt }] }]
+              const result = await model.generateContent({
+                contents: [{
+                  parts: [{ text: prompt }]
+                }]
               });
               
-              await sendWhatsAppMessage(sender.wa_id, response.response.text());
+              const response = await result.response;
+              const aiResponse = response.text();
+              
+              console.log('AI generated response:', aiResponse)
+
+              // Send AI response back via WhatsApp
+              const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
+              
+              // Store AI response in database
+              const aiMessageData = {
+                whatsapp_message_id: whatsappResponse.messages[0].id,
+                user_id: userContext.id,
+                direction: 'outgoing',
+                message_type: 'text',
+                content: { text: aiResponse },
+                status: 'sent',
+                created_at: new Date().toISOString()
+              }
+
+              const { error: aiMessageError } = await supabase
+                .from('messages')
+                .insert(aiMessageData)
+
+              if (aiMessageError) {
+                console.error('Error storing AI message:', aiMessageError)
+                throw aiMessageError
+              }
             }
-          } else {
-            // Simple response for non-image related messages
-            const simplePrompt = `Respond briefly and naturally to: "${messageText}"`;
-            const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
-            const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-            const response = await model.generateContent({
-              contents: [{ parts: [{ text: simplePrompt }] }]
-            });
-            
-            await sendWhatsAppMessage(sender.wa_id, response.response.text());
+
+          } catch (error) {
+            console.error('Error generating or sending AI response:', error)
+            // Send error message to user
+            await sendWhatsAppMessage(
+              sender.wa_id,
+              "I apologize, but I encountered an error while processing your request. Please try again later."
+            );
+            throw error
           }
+        }
+      }
+
+      // Process status updates
+      if (body.entry?.[0]?.changes?.[0]?.value?.statuses) {
+        const status = body.entry[0].changes[0].value.statuses[0]
+        
+        const { error: statusError } = await supabase
+          .from('messages')
+          .update({ status: status.status, updated_at: new Date().toISOString() })
+          .eq('whatsapp_message_id', status.id)
+
+        if (statusError) {
+          console.error('Error updating message status:', statusError)
+          throw statusError
         }
       }
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+      })
     }
 
-    return new Response('Method not allowed', { status: 405 });
+    return new Response('Method not allowed', { status: 405 })
   } catch (error) {
-    console.error('Error processing request:', error);
+    console.error('Error processing request:', error)
     return new Response(JSON.stringify({ error: 'Internal server error' }), { 
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    })
   }
-});
+})
