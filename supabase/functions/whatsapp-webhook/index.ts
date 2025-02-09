@@ -56,35 +56,7 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
 
 const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
 
-To generate images, please use keywords like:
-- "Show me..."
-- "Generate..."
-- "Create..."
-- "Make me..."
-- "I want a picture of..."
-- "Give me an image of..."
-
-For example:
-"Show me a beach sunset"
-"Generate a fantasy castle"
-"Make me a cute puppy"
-"I want a picture of mountains";
-
-I understand you best when you use keywords like "show me", "create", "generate", or "make" in your requests.
-
-Try these example commands:
-"Show me a magical forest"
-"Generate a futuristic city"
-"Create a cute puppy"
-"Make me a dragon"
-"I want a picture of mountains"
-"Give me an image of space";
-
-I can generate any kind of image you want! Here's how to use me:
-
-Important: I need specific keywords to understand your requests!
-
-1. New Images:
+To Create New Images:
 Always start with keywords like:
 - "Show me..."
 - "Generate..."
@@ -103,21 +75,9 @@ Try it now! What would you like me to create?`;
 
 const INITIAL_GREETING = `Hi! I'm an AI image generator that can create any image you imagine! 🎨
 
-Important: I understand you best when you use keywords like "show me", "create", "generate", or "make" in your requests.
-
-Try these example commands:
-"Show me a magical forest"
-"Generate a futuristic city"
-"Create a cute puppy"
-"Make me a dragon"
-"I want a picture of mountains"
-"Give me an image of space";
-
-I can generate any kind of image you want! Here's how to use me:
-
 Important: I need specific keywords to understand your requests!
 
-1. New Images:
+To Create New Images:
 Always start with keywords like:
 - "Show me..."
 - "Generate..."
