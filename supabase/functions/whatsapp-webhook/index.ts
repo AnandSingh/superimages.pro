@@ -380,12 +380,18 @@ serve(async (req) => {
 
               // First, use Gemini to optimize the prompt
               const promptOptimizationPrompt = `
-                I need to generate an image based on this user request: "${promptText}"
-                ${isFollowUpRequest ? "This is a modification of a previous image request." : ""}
-                Please create an optimized, clear, and detailed prompt for an AI image generator.
-                The prompt should be descriptive but concise.
-                Just return the optimized prompt, nothing else.
-              `;
+You are an expert in creating prompts for the FLUX image generation model. Convert this user request into a high-quality image generation prompt:
+"${promptText}"
+
+Follow these rules:
+- Focus on descriptive elements, not instructions
+- Include relevant style terms (cinematic, dynamic, macro, etc.)
+- Add composition and lighting details when relevant
+- Keep it concise and direct
+- Don't use words like "generate", "create", or "make"
+- Don't add explanations or extra text
+
+Just return the optimized prompt text, nothing else.`;
 
               const promptResult = await model.generateContent({
                 contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
