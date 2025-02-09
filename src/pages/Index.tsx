@@ -1,11 +1,10 @@
 
 import { motion } from "framer-motion";
 import WhatsAppChat from "@/components/WhatsAppChat";
-import ImageGenerationTest from "@/components/ImageGenerationTest";
 
 const Index = () => {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4 space-y-8">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -21,15 +20,6 @@ const Index = () => {
         <p className="text-lg text-muted-foreground mb-8 animate-fadeIn" style={{ animationDelay: "0.3s" }}>
           Test the WhatsApp Cloud API integration by sending messages to any WhatsApp number.
         </p>
-      </motion.div>
-      
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3, duration: 0.6 }}
-        className="w-full max-w-4xl"
-      >
-        <ImageGenerationTest />
       </motion.div>
       
       <motion.div
