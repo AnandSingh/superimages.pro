@@ -214,6 +214,55 @@ async function sendWhatsAppMessage(recipient: string, text: string) {
   return result;
 }
 
+// Helper function for generating user-friendly error messages
+function getUserFriendlyErrorMessage(error: any, context?: string): string {
+  console.error('Error details:', {
+    error,
+    message: error.message,
+    context,
+    stack: error.stack
+  });
+
+  // Image generation specific errors
+  if (context === 'image_generation') {
+    if (error.message?.includes('Invalid response')) {
+      return "I had trouble creating that image. Try being more specific in your description, for example: 'Create a detailed image of a sunset over mountains' rather than just 'sunset'";
+    }
+    if (error.message?.includes('rate limit')) {
+      return "I'm getting a lot of image requests right now. Please wait a minute and try again.";
+    }
+    if (error.message?.includes('Invalid image URL')) {
+      return "I created the image but had trouble sending it. You can try describing your request differently, or try again in a few moments.";
+    }
+    return "I couldn't create that image. Try being more specific in your description or using different words to describe what you want.";
+  }
+
+  // AI conversation specific errors
+  if (context === 'conversation') {
+    if (error.message?.includes('rate limit')) {
+      return "I'm handling many conversations right now. Please try again in a moment.";
+    }
+    if (error.message?.includes('context length')) {
+      return "Our conversation has gotten quite long. Let's start fresh with your question.";
+    }
+    return "I didn't quite understand that. Could you rephrase your message?";
+  }
+
+  // WhatsApp API specific errors
+  if (context === 'whatsapp_api') {
+    if (error.message?.includes('recipient')) {
+      return "I'm having trouble reaching you. Please make sure your WhatsApp number is active.";
+    }
+    if (error.message?.includes('template')) {
+      return "I couldn't send that type of message. Please try sending text only.";
+    }
+    return "I'm having trouble sending messages right now. Please try again in a moment.";
+  }
+
+  // Default error message for unknown errors
+  return "I encountered an unexpected issue. Please try rephrasing your request or try again in a few moments.";
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
