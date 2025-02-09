@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -64,7 +63,8 @@ const helpfulImageRequestGuide = `I can generate images for you! Try phrases lik
 To modify an existing image, try:
 - "Make it more..."
 - "Change the color to..."
-- "Make the background..."`;
+- "Make the background..."
+- "Add more..."`;
 
 async function generateImageWithReplicate(prompt: string) {
   const replicate = new Replicate({
@@ -178,6 +178,7 @@ async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: 
         statusText: response.statusText,
         result
       });
+      await sendWhatsAppMessage(recipient, helpfulImageRequestGuide);
       throw new Error(`WhatsApp API error: ${result.error?.message || 'Unknown error'}`);
     }
 
@@ -355,7 +356,6 @@ serve(async (req) => {
             const conversationHistory = await getConversationHistory(supabase, userContext.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
-            // Enhanced image request detection
             const imageKeywords = [
               // Direct requests
               'photo of', 'image of', 'picture of',
@@ -367,14 +367,16 @@ serve(async (req) => {
               // Create/Generate patterns
               'create', 'generate', 'make', 'draw',
               // Simple patterns
-              'photo', 'picture', 'image'
+              'photo', 'picture', 'image',
+              'show me'
             ];
 
             const modificationKeywords = [
               'make it', 'change it', 'instead', 
               'make the', 'change the', 'turn the',
               'but with', 'but make', 'but change',
-              'modify', 'adjust', 'update'
+              'modify', 'adjust', 'update',
+              'add more', 'remove', 'change'
             ];
             
             const isDirectImageRequest = imageKeywords.some(keyword => 
@@ -396,7 +398,6 @@ serve(async (req) => {
                 const previousPrompt = userContext.last_image_context.prompt;
                 let modification = message.text.body;
                 
-                // Handle various modification patterns
                 modificationKeywords.forEach(keyword => {
                   if (modification.toLowerCase().startsWith(keyword)) {
                     modification = modification.slice(keyword.length).trim();
@@ -404,17 +405,6 @@ serve(async (req) => {
                 });
                 
                 promptText = `${modification} (maintaining style and context from previous image: ${previousPrompt})`;
-              } else {
-                const { error: contextResetError } = await supabase
-                  .from('whatsapp_users')
-                  .update({
-                    last_image_context: null
-                  })
-                  .eq('id', userContext.id);
-
-                if (contextResetError) {
-                  console.error('Error resetting context:', contextResetError);
-                }
               }
 
               const promptOptimizationPrompt = `
