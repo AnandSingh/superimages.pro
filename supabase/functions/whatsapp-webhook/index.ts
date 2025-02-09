@@ -380,20 +380,28 @@ serve(async (req) => {
 
               // First, use Gemini to optimize the prompt
               const promptOptimizationPrompt = `
-You are an expert in creating prompts for the FLUX image generation model. Convert this user request into a high-quality image generation prompt:
+You are an expert in creating prompts for the FLUX image generation model. Analyze this user request and convert it into a high-quality image generation prompt:
 "${promptText}"
 
-Follow these rules:
-- Focus on descriptive elements, not instructions
-- Include relevant style terms (cinematic, dynamic, macro, etc.)
-- Add composition and lighting details when relevant
+Follow these guidelines in order:
+1. First, identify the main subject and its key characteristics
+2. Then, choose appropriate style elements based on the subject type:
+   - For objects: consider materials, textures, and environmental context
+   - For portraits: focus on lighting, mood, and composition
+   - For landscapes: emphasize atmosphere, time of day, and scale
+   - For actions: highlight dynamics, motion, and energy
+3. Finally, add relevant technical aspects that enhance the image
+
+Rules:
+- Focus purely on descriptive elements
+- Each prompt should be unique to the request
 - Keep it concise and direct
 - Don't use words like "generate", "create", "make", "want", "give me"
 - Don't add explanations or extra text
 - Ignore any bot responses in the text
 - Treat "photo", "image", "picture" as the same thing
 
-Example inputs and outputs:
+Note: The following examples show the structure, but do not copy their exact terms. Create fresh, context-appropriate descriptors for each request:
 Input: "I want a photo of a black sports car"
 Output: "sleek black sports car, dramatic automotive photography, studio lighting, glossy finish, cinematic"
 
