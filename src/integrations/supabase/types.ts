@@ -9,81 +9,10 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      command_definitions: {
-        Row: {
-          command: string
-          created_at: string | null
-          description: string
-          id: string
-          parameters: Json | null
-          type: string
-        }
-        Insert: {
-          command: string
-          created_at?: string | null
-          description: string
-          id?: string
-          parameters?: Json | null
-          type: string
-        }
-        Update: {
-          command?: string
-          created_at?: string | null
-          description?: string
-          id?: string
-          parameters?: Json | null
-          type?: string
-        }
-        Relationships: []
-      }
-      expense_summaries: {
-        Row: {
-          category_totals: Json
-          created_at: string | null
-          end_date: string
-          id: string
-          last_updated: string | null
-          start_date: string
-          timeframe: string
-          total_amount: number
-          user_id: string
-        }
-        Insert: {
-          category_totals?: Json
-          created_at?: string | null
-          end_date: string
-          id?: string
-          last_updated?: string | null
-          start_date: string
-          timeframe: string
-          total_amount?: number
-          user_id: string
-        }
-        Update: {
-          category_totals?: Json
-          created_at?: string | null
-          end_date?: string
-          id?: string
-          last_updated?: string | null
-          start_date?: string
-          timeframe?: string
-          total_amount?: number
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "expense_summaries_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       expenses: {
         Row: {
           amount: number
-          category: Database["public"]["Enums"]["expense_category"] | null
+          category: string | null
           created_at: string | null
           date: string | null
           description: string | null
@@ -92,7 +21,7 @@ export type Database = {
         }
         Insert: {
           amount: number
-          category?: Database["public"]["Enums"]["expense_category"] | null
+          category?: string | null
           created_at?: string | null
           date?: string | null
           description?: string | null
@@ -101,7 +30,7 @@ export type Database = {
         }
         Update: {
           amount?: number
-          category?: Database["public"]["Enums"]["expense_category"] | null
+          category?: string | null
           created_at?: string | null
           date?: string | null
           description?: string | null
@@ -170,17 +99,10 @@ export type Database = {
       messages: {
         Row: {
           content: Json
-          conversation_context: Json | null
           created_at: string | null
           direction: string
           id: string
-          intent: Database["public"]["Enums"]["message_intent"] | null
-          last_processed_at: string | null
           message_type: string
-          parsed_data: Json | null
-          processed: boolean | null
-          processing_attempts: number | null
-          processing_metadata: Json | null
           status: string | null
           updated_at: string | null
           user_id: string | null
@@ -188,17 +110,10 @@ export type Database = {
         }
         Insert: {
           content: Json
-          conversation_context?: Json | null
           created_at?: string | null
           direction: string
           id?: string
-          intent?: Database["public"]["Enums"]["message_intent"] | null
-          last_processed_at?: string | null
           message_type: string
-          parsed_data?: Json | null
-          processed?: boolean | null
-          processing_attempts?: number | null
-          processing_metadata?: Json | null
           status?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -206,17 +121,10 @@ export type Database = {
         }
         Update: {
           content?: Json
-          conversation_context?: Json | null
           created_at?: string | null
           direction?: string
           id?: string
-          intent?: Database["public"]["Enums"]["message_intent"] | null
-          last_processed_at?: string | null
           message_type?: string
-          parsed_data?: Json | null
-          processed?: boolean | null
-          processing_attempts?: number | null
-          processing_metadata?: Json | null
           status?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -267,22 +175,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      expense_category:
-        | "groceries"
-        | "restaurant"
-        | "entertainment"
-        | "transport"
-        | "utilities"
-        | "shopping"
-        | "other"
-      message_intent:
-        | "RECORD_EXPENSE"
-        | "QUERY_EXPENSES"
-        | "MODIFY_EXPENSE"
-        | "OTHER"
-        | "FINANCIAL_ADVICE"
-        | "CLARIFICATION"
-        | "CONVERSATION"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
