@@ -341,200 +341,171 @@ serve(async (req) => {
           timestamp: message.timestamp
         });
 
-        // Create or update WhatsApp user
-        const { data: userData, error: userError } = await supabase
-          .from('whatsapp_users')
-          .upsert({
-            phone_number: sender.wa_id,
-            first_name: sender.profile?.name?.split(' ')[0] || null,
-            last_name: sender.profile?.name?.split(' ').slice(1).join(' ') || null,
-            last_active: new Date().toISOString()
-          }, {
-            onConflict: 'phone_number'
-          })
+        try {
+          // Check if message already exists using upsert
+          const { data: existingMessage, error: checkError } = await supabase
+            .from('messages')
+            .select('id, status')
+            .eq('whatsapp_message_id', message.id)
+            .maybeSingle()
 
-        if (userError) {
-          console.error('Error updating user:', userError)
-          throw userError
-        }
-
-        // Get the user data including context
-        const { data: userContext, error: userContextError } = await supabase
-          .from('whatsapp_users')
-          .select('id, last_interaction_type, last_image_context')
-          .eq('phone_number', sender.wa_id)
-          .single()
-
-        if (userContextError) {
-          console.error('Error getting user context:', userContextError)
-          throw userContextError
-        }
-
-        // Store the message with appropriate content based on type
-        let messageContent = {}
-        if (message.type === 'text') {
-          messageContent = {
-            text: message.text.body
+          if (checkError) {
+            console.error('Error checking existing message:', checkError)
+            throw checkError
           }
-        } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
-          messageContent = message[message.type]
-        }
 
-        const messageData = {
-          whatsapp_message_id: message.id,
-          user_id: userContext.id,
-          direction: 'incoming',
-          message_type: message.type,
-          content: messageContent,
-          status: 'received',
-          created_at: new Date(parseInt(message.timestamp) * 1000).toISOString()
-        }
+          // If message exists and was processed successfully, return 200
+          if (existingMessage?.status === 'sent' || existingMessage?.status === 'delivered') {
+            console.log('Message already processed successfully:', message.id)
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
 
-        console.log('Storing message:', messageData)
-
-        const { error: messageError } = await supabase
-          .from('messages')
-          .insert(messageData)
-
-        if (messageError) {
-          console.error('Error storing message:', messageError)
-          throw messageError
-        }
-
-        // Handle media messages
-        if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
-          const { error: mediaError } = await supabase
-            .from('media_assets')
-            .insert({
-              whatsapp_id: message.image?.id || message.video?.id || message.document?.id,
-              type: message.type,
-              mime_type: message[message.type].mime_type,
-              filename: message.document?.filename
+          // Create or update WhatsApp user
+          const { data: userData, error: userError } = await supabase
+            .from('whatsapp_users')
+            .upsert({
+              phone_number: sender.wa_id,
+              first_name: sender.profile?.name?.split(' ')[0] || null,
+              last_name: sender.profile?.name?.split(' ').slice(1).join(' ') || null,
+              last_active: new Date().toISOString()
+            }, {
+              onConflict: 'phone_number',
+              returning: 'minimal' // Reduce data transfer
             })
 
-          if (mediaError) {
-            console.error('Error storing media asset:', mediaError)
-            throw mediaError
+          if (userError) {
+            console.error('Error updating user:', userError)
+            throw userError
           }
-        }
 
-        // Generate AI response for text messages
-        if (message.type === 'text') {
-          try {
-            console.log('Processing message:', message.text.body);
-            
-            // Get conversation history
-            const conversationHistory = await getConversationHistory(supabase, userContext.id);
-            console.log('Retrieved conversation history:', conversationHistory);
-            
-            // Check if this is an image generation request
-            const isImageGenerationRequest = isImageRequest(
-              message.text.body,
-              userContext.last_interaction_type
-            );
+          // Get the user data including context
+          const { data: userContext, error: userContextError } = await supabase
+            .from('whatsapp_users')
+            .select('id, last_interaction_type, last_image_context')
+            .eq('phone_number', sender.wa_id)
+            .single()
 
-            if (isImageGenerationRequest) {
-              let promptText = message.text.body;
-              let aspectRatio = detectAspectRatio(promptText);
+          if (userContextError) {
+            console.error('Error getting user context:', userContextError)
+            throw userContextError
+          }
 
-              // If it's a follow-up request, combine with previous context
-              if (userContext.last_image_context) {
-                const previousPrompt = userContext.last_image_context.prompt;
-                const previousAspectRatio = userContext.last_image_context.aspectRatio || '1:1';
-                
-                // Keep previous aspect ratio unless explicitly changed
-                if (aspectRatio === '1:1' && previousAspectRatio !== '1:1') {
-                  aspectRatio = previousAspectRatio;
+          // Store the message with appropriate content based on type
+          let messageContent = {}
+          if (message.type === 'text') {
+            messageContent = {
+              text: message.text.body
+            }
+          } else if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+            messageContent = message[message.type]
+          }
+
+          const messageData = {
+            whatsapp_message_id: message.id,
+            user_id: userContext.id,
+            direction: 'incoming',
+            message_type: message.type,
+            content: messageContent,
+            status: 'received',
+            created_at: new Date(parseInt(message.timestamp) * 1000).toISOString()
+          }
+
+          console.log('Storing message:', messageData)
+
+          // Use upsert instead of insert to handle duplicates gracefully
+          const { error: messageError } = await supabase
+            .from('messages')
+            .upsert(messageData, {
+              onConflict: 'whatsapp_message_id',
+              returning: 'minimal'
+            })
+
+          if (messageError) {
+            console.error('Error storing message:', messageError)
+            throw messageError
+          }
+
+          // Handle media messages
+          if (message.type === 'image' || message.type === 'video' || message.type === 'document') {
+            const { error: mediaError } = await supabase
+              .from('media_assets')
+              .upsert({
+                whatsapp_id: message.image?.id || message.video?.id || message.document?.id,
+                type: message.type,
+                mime_type: message[message.type].mime_type,
+                filename: message.document?.filename
+              }, {
+                onConflict: 'whatsapp_id',
+                returning: 'minimal'
+              })
+
+            if (mediaError) {
+              console.error('Error storing media asset:', mediaError)
+              throw mediaError
+            }
+          }
+
+          // Generate AI response for text messages
+          if (message.type === 'text') {
+            try {
+              console.log('Processing message:', message.text.body);
+              
+              // Get conversation history
+              const conversationHistory = await getConversationHistory(supabase, userContext.id);
+              console.log('Retrieved conversation history:', conversationHistory);
+              
+              // Check if this is an image generation request
+              const isImageGenerationRequest = isImageRequest(
+                message.text.body,
+                userContext.last_interaction_type
+              );
+
+              if (isImageGenerationRequest) {
+                let promptText = message.text.body;
+                let aspectRatio = detectAspectRatio(promptText);
+
+                // If it's a follow-up request, combine with previous context
+                if (userContext.last_image_context) {
+                  const previousPrompt = userContext.last_image_context.prompt;
+                  const previousAspectRatio = userContext.last_image_context.aspectRatio || '1:1';
+                  
+                  // Keep previous aspect ratio unless explicitly changed
+                  if (aspectRatio === '1:1' && previousAspectRatio !== '1:1') {
+                    aspectRatio = previousAspectRatio;
+                  }
+                  
+                  promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
                 }
+
+                // First, use Gemini to optimize the prompt
+                const promptOptimizationPrompt = `
+                  I need to generate an image based on this user request: "${promptText}"
+                  ${isImageGenerationRequest ? "This is a modification of a previous image request." : ""}
+                  The image will be generated in ${aspectRatio} aspect ratio format.
+                  Please create an optimized, clear, and detailed prompt for an AI image generator.
+                  The prompt should be descriptive but concise.
+                  Just return the optimized prompt, nothing else.
+                `;
+
+                const promptResult = await model.generateContent({
+                  contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
+                });
                 
-                promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
-              }
+                const optimizedPrompt = promptResult.response.text().trim();
+                console.log('Optimized prompt:', optimizedPrompt);
 
-              // First, use Gemini to optimize the prompt
-              const promptOptimizationPrompt = `
-                I need to generate an image based on this user request: "${promptText}"
-                ${isImageGenerationRequest ? "This is a modification of a previous image request." : ""}
-                The image will be generated in ${aspectRatio} aspect ratio format.
-                Please create an optimized, clear, and detailed prompt for an AI image generator.
-                The prompt should be descriptive but concise.
-                Just return the optimized prompt, nothing else.
-              `;
-
-              const promptResult = await model.generateContent({
-                contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
-              });
-              
-              const optimizedPrompt = promptResult.response.text().trim();
-              console.log('Optimized prompt:', optimizedPrompt);
-
-              // Update user's context with both prompt and aspect ratio
-              const { error: contextError } = await supabase
-                .from('whatsapp_users')
-                .update({
-                  last_interaction_type: 'image_generation',
-                  last_image_context: {
-                    prompt: optimizedPrompt,
-                    aspectRatio: aspectRatio,
-                    timestamp: new Date().toISOString()
-                  }
-                })
-                .eq('id', userContext.id);
-
-              if (contextError) {
-                console.error('Error updating user context:', contextError);
-                throw contextError;
-              }
-
-              // Send a status message
-              await sendWhatsAppMessage(
-                sender.wa_id,
-                `I'm generating your image now in ${aspectRatio} format... This might take a few seconds. 🎨`
-              );
-
-              // Generate the image using Replicate
-              const imageUrl = await generateImageWithReplicate(optimizedPrompt, aspectRatio);
-              console.log('Generated image URL:', imageUrl);
-
-              // Send the image back via WhatsApp
-              const whatsappResponse = await sendWhatsAppImage(
-                sender.wa_id,
-                imageUrl,
-                `Here's your generated image in ${aspectRatio} format! 🎨`
-              );
-              
-              // Store the response in the database
-              const aiMessageData = {
-                whatsapp_message_id: whatsappResponse.messages[0].id,
-                user_id: userContext.id,
-                direction: 'outgoing',
-                message_type: 'image',
-                content: { 
-                  image: {
-                    url: imageUrl,
-                    caption: `Here's your generated image in ${aspectRatio} format! 🎨`
-                  }
-                },
-                status: 'sent',
-                created_at: new Date().toISOString()
-              }
-
-              const { error: aiMessageError } = await supabase
-                .from('messages')
-                .insert(aiMessageData)
-
-              if (aiMessageError) {
-                console.error('Error storing AI message:', aiMessageError)
-                throw aiMessageError
-              }
-
-            } else {
-              // Reset image context if it's a regular conversation
-              if (userContext.last_interaction_type === 'image_generation') {
+                // Update user's context with both prompt and aspect ratio
                 const { error: contextError } = await supabase
                   .from('whatsapp_users')
                   .update({
-                    last_interaction_type: 'conversation',
-                    last_image_context: null
+                    last_interaction_type: 'image_generation',
+                    last_image_context: {
+                      prompt: optimizedPrompt,
+                      aspectRatio: aspectRatio,
+                      timestamp: new Date().toISOString()
+                    }
                   })
                   .eq('id', userContext.id);
 
@@ -542,10 +513,71 @@ serve(async (req) => {
                   console.error('Error updating user context:', contextError);
                   throw contextError;
                 }
-              }
 
-              // Handle regular text message with Gemini AI
-              const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
+                // Send a status message
+                await sendWhatsAppMessage(
+                  sender.wa_id,
+                  `I'm generating your image now in ${aspectRatio} format... This might take a few seconds. 🎨`
+                );
+
+                // Generate the image using Replicate
+                const imageUrl = await generateImageWithReplicate(optimizedPrompt, aspectRatio);
+                console.log('Generated image URL:', imageUrl);
+
+                // Send the image back via WhatsApp
+                const whatsappResponse = await sendWhatsAppImage(
+                  sender.wa_id,
+                  imageUrl,
+                  `Here's your generated image in ${aspectRatio} format! 🎨`
+                );
+                
+                // Store the response in the database using upsert
+                const aiMessageData = {
+                  whatsapp_message_id: whatsappResponse.messages[0].id,
+                  user_id: userContext.id,
+                  direction: 'outgoing',
+                  message_type: 'image',
+                  content: { 
+                    image: {
+                      url: imageUrl,
+                      caption: `Here's your generated image in ${aspectRatio} format! 🎨`
+                    }
+                  },
+                  status: 'sent',
+                  created_at: new Date().toISOString()
+                }
+
+                const { error: aiMessageError } = await supabase
+                  .from('messages')
+                  .upsert(aiMessageData, {
+                    onConflict: 'whatsapp_message_id',
+                    returning: 'minimal'
+                  })
+
+                if (aiMessageError) {
+                  console.error('Error storing AI message:', aiMessageError)
+                  throw aiMessageError
+                }
+
+              } else {
+                // Reset image context if it's a regular conversation
+                if (userContext.last_interaction_type === 'image_generation') {
+                  const { error: contextError } = await supabase
+                    .from('whatsapp_users')
+                    .update({
+                      last_interaction_type: 'conversation',
+                      last_image_context: null
+                    })
+                    .eq('id', userContext.id);
+
+                  if (contextError) {
+                    console.error('Error updating user context:', contextError);
+                    throw contextError;
+                  }
+                }
+
+                // Handle regular text message with Gemini AI
+                const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
 
 Previous conversation:
 ${conversationHistory}
@@ -559,54 +591,67 @@ Important instructions:
 - Don't say you can't remember - use the conversation history provided
 - Respond naturally as if you were in an ongoing conversation
 - Keep responses brief and to the point`;
-              
-              const result = await model.generateContent({
-                contents: [{
-                  parts: [{ text: prompt }]
-                }]
+                
+                const result = await model.generateContent({
+                  contents: [{
+                    parts: [{ text: prompt }]
+                  }]
+                });
+                
+                const response = await result.response;
+                const aiResponse = response.text();
+                
+                console.log('AI generated response:', aiResponse)
+
+                // Send AI response back via WhatsApp
+                const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
+                
+                // Store AI response in database using upsert
+                const aiMessageData = {
+                  whatsapp_message_id: whatsappResponse.messages[0].id,
+                  user_id: userContext.id,
+                  direction: 'outgoing',
+                  message_type: 'text',
+                  content: { text: aiResponse },
+                  status: 'sent',
+                  created_at: new Date().toISOString()
+                }
+
+                const { error: aiMessageError } = await supabase
+                  .from('messages')
+                  .upsert(aiMessageData, {
+                    onConflict: 'whatsapp_message_id',
+                    returning: 'minimal'
+                  })
+
+                if (aiMessageError) {
+                  console.error('Error storing AI message:', aiMessageError)
+                  throw aiMessageError
+                }
+              }
+
+            } catch (error) {
+              console.error('Error generating or sending AI response:', error)
+              // Send error message to user
+              const friendlyErrorMessage = getUserFriendlyErrorMessage(error, 
+                error.message?.includes('image') ? 'image_generation' : 'conversation'
+              );
+              await sendWhatsAppMessage(
+                sender.wa_id,
+                friendlyErrorMessage
+              );
+              // Return 200 to prevent retries even though we had an error
+              return new Response(JSON.stringify({ success: false, error: error.message }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
-              
-              const response = await result.response;
-              const aiResponse = response.text();
-              
-              console.log('AI generated response:', aiResponse)
-
-              // Send AI response back via WhatsApp
-              const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
-              
-              // Store AI response in database
-              const aiMessageData = {
-                whatsapp_message_id: whatsappResponse.messages[0].id,
-                user_id: userContext.id,
-                direction: 'outgoing',
-                message_type: 'text',
-                content: { text: aiResponse },
-                status: 'sent',
-                created_at: new Date().toISOString()
-              }
-
-              const { error: aiMessageError } = await supabase
-                .from('messages')
-                .insert(aiMessageData)
-
-              if (aiMessageError) {
-                console.error('Error storing AI message:', aiMessageError)
-                throw aiMessageError
-              }
             }
-
-          } catch (error) {
-            console.error('Error generating or sending AI response:', error)
-            // Send error message to user
-            const friendlyErrorMessage = getUserFriendlyErrorMessage(error, 
-              error.message?.includes('image') ? 'image_generation' : 'conversation'
-            );
-            await sendWhatsAppMessage(
-              sender.wa_id,
-              friendlyErrorMessage
-            );
-            throw error
           }
+        } catch (error) {
+          console.error('Error processing message:', error);
+          // Always return 200 to prevent WhatsApp from retrying
+          return new Response(JSON.stringify({ success: false, error: error.message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
         }
       }
 
@@ -621,7 +666,10 @@ Important instructions:
 
         if (statusError) {
           console.error('Error updating message status:', statusError)
-          throw statusError
+          // Return 200 even for status update errors
+          return new Response(JSON.stringify({ success: false, error: statusError.message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
         }
       }
 
@@ -630,11 +678,14 @@ Important instructions:
       })
     }
 
-    return new Response('Method not allowed', { status: 405 })
+    return new Response('Method not allowed', { 
+      status: 405,
+      headers: corsHeaders
+    })
   } catch (error) {
     console.error('Error processing request:', error)
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
-      status: 500,
+    // Return 200 for all errors to prevent retries
+    return new Response(JSON.stringify({ error: 'Internal server error', details: error.message }), { 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
