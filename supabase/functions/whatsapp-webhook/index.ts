@@ -82,6 +82,58 @@ const imageTypeParams: Record<ImageType, GenerationParams> = {
   }
 };
 
+// Function to detect if a message is requesting an image
+function isImageRequest(text: string): boolean {
+  const promptLower = text.toLowerCase();
+  
+  // Direct image generation keywords
+  const directKeywords = [
+    'generate', 'create', 'make', 'draw', 'show',
+    'give me', 'i want', 'can you make', 'can you create',
+    'can you generate', 'can you show'
+  ];
+  
+  // Image-related nouns
+  const imageNouns = [
+    'image', 'picture', 'photo', 'pic', 'portrait',
+    'selfie', 'photograph', 'drawing', 'artwork'
+  ];
+  
+  // Check for direct matches of image-implying words
+  const standaloneKeywords = [
+    'selfie', 'portrait', 'painting', 'artwork',
+    'landscape', 'scenery', 'picture'
+  ];
+  
+  // Check for standalone keywords
+  if (standaloneKeywords.some(keyword => promptLower.includes(keyword))) {
+    return true;
+  }
+  
+  // Check for combinations of action words and image nouns
+  for (const action of directKeywords) {
+    for (const noun of imageNouns) {
+      if (promptLower.includes(`${action} ${noun}`)) {
+        return true;
+      }
+      // Check for variations with "a" or "an"
+      if (promptLower.includes(`${action} a ${noun}`)) {
+        return true;
+      }
+      if (promptLower.includes(`${action} an ${noun}`)) {
+        return true;
+      }
+    }
+  }
+  
+  // Check for phrases like "image of" or "picture of"
+  if (imageNouns.some(noun => promptLower.includes(`${noun} of`))) {
+    return true;
+  }
+  
+  return false;
+}
+
 // Function to detect image type from prompt
 function detectImageType(prompt: string): ImageType {
   const promptLower = prompt.toLowerCase();
@@ -90,7 +142,9 @@ function detectImageType(prompt: string): ImageType {
   if (promptLower.includes('portrait') || 
       promptLower.includes('person') || 
       promptLower.includes('face') ||
-      promptLower.includes('selfie')) {
+      promptLower.includes('selfie') ||
+      promptLower.includes('profile') ||
+      promptLower.includes('headshot')) {
     return 'portrait';
   }
   
@@ -99,7 +153,9 @@ function detectImageType(prompt: string): ImageType {
       promptLower.includes('scenery') || 
       promptLower.includes('nature') ||
       promptLower.includes('sunset') ||
-      promptLower.includes('mountain')) {
+      promptLower.includes('mountain') ||
+      promptLower.includes('panorama') ||
+      promptLower.includes('vista')) {
     return 'landscape';
   }
   
@@ -108,7 +164,8 @@ function detectImageType(prompt: string): ImageType {
       promptLower.includes('item') ||
       promptLower.includes('showcase') ||
       promptLower.includes('car') ||
-      promptLower.includes('phone')) {
+      promptLower.includes('phone') ||
+      promptLower.includes('commercial')) {
     return 'product';
   }
   
@@ -116,7 +173,9 @@ function detectImageType(prompt: string): ImageType {
   if (promptLower.includes('abstract') || 
       promptLower.includes('artistic') || 
       promptLower.includes('surreal') ||
-      promptLower.includes('fantasy')) {
+      promptLower.includes('fantasy') ||
+      promptLower.includes('creative') ||
+      promptLower.includes('digital art')) {
     return 'artistic';
   }
   
@@ -430,24 +489,8 @@ serve(async (req) => {
             const conversationHistory = await getConversationHistory(supabase, userContext.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
-            // Determine if this is an image generation request
-            const imageKeywords = [
-              'generate image',
-              'create image',
-              'make image',
-              'create an image',
-              'generate an image',
-              'make an image',
-              'image of',
-              'picture of',
-              'draw',
-              'create a picture',
-              'generate a picture'
-            ];
-            
-            const isDirectImageRequest = imageKeywords.some(keyword => 
-              message.text.body.toLowerCase().includes(keyword)
-            );
+            // Check if this is an image generation request
+            const isDirectImageRequest = isImageRequest(message.text.body);
 
             // Check if this is a follow-up image request based on context
             const isImageContext = userContext.last_interaction_type === 'image_generation';
