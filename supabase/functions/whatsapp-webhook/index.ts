@@ -12,7 +12,7 @@ const corsHeaders = {
 async function getConversationHistory(supabase: any, userId: string, limit = 5) {
   const { data: messages, error } = await supabase
     .from('messages')
-    .select('direction, content, created_at')
+    .select('direction, content, message_type, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -29,7 +29,21 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
   
   return orderedMessages.map(msg => {
     const role = msg.direction === 'incoming' ? 'User' : 'Assistant';
-    const text = msg.content.text || '[media content]';
+    let text = '';
+    
+    if (msg.message_type === 'text') {
+      text = msg.content.text;
+    } else if (msg.message_type === 'image') {
+      // For images, include both caption and context if available
+      if (msg.direction === 'outgoing') {
+        text = `[Generated image with caption: ${msg.content.image?.caption || 'No caption'}]`;
+      } else {
+        text = '[Image message]';
+      }
+    } else {
+      text = `[${msg.message_type} content]`;
+    }
+    
     return `${role}: ${text}`;
   }).join('\n');
 }
@@ -55,6 +69,50 @@ function detectAspectRatio(text: string): string {
   return '1:1'; // Default to square if no specific ratio is detected
 }
 
+// Function to manage context expiration
+async function shouldResetContext(supabase: any, userId: string) {
+  const { data: user, error } = await supabase
+    .from('whatsapp_users')
+    .select('last_interaction_type, last_image_context')
+    .eq('id', userId)
+    .single();
+
+  if (error || !user) return true;
+
+  // Check if there's an existing image context
+  if (user.last_image_context) {
+    const lastContextTime = new Date(user.last_image_context.timestamp).getTime();
+    const currentTime = new Date().getTime();
+    
+    // Reset context if it's older than 5 minutes
+    const contextTimeout = 5 * 60 * 1000; // 5 minutes in milliseconds
+    return (currentTime - lastContextTime) > contextTimeout;
+  }
+
+  return true;
+}
+
+// Function to preserve image generation context
+async function updateImageContext(supabase: any, userId: string, prompt: string, aspectRatio: string) {
+  const { error } = await supabase
+    .from('whatsapp_users')
+    .update({
+      last_interaction_type: 'image_generation',
+      last_image_context: {
+        prompt,
+        aspectRatio,
+        timestamp: new Date().toISOString()
+      }
+    })
+    .eq('id', userId);
+
+  if (error) {
+    console.error('Error updating image context:', error);
+    throw error;
+  }
+}
+
+// Function to generate image with Replicate
 async function generateImageWithReplicate(prompt: string, aspectRatio: string) {
   const replicate = new Replicate({
     auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
@@ -388,9 +446,11 @@ serve(async (req) => {
             // Check if this is a follow-up image request based on context
             const isImageContext = userContext.last_interaction_type === 'image_generation';
             const followUpKeywords = ['make it', 'change it to', 'i want', 'instead', 'but'];
-            const isFollowUpRequest = isImageContext && followUpKeywords.some(keyword =>
-              message.text.body.toLowerCase().includes(keyword)
-            );
+            const isFollowUpRequest = isImageContext && 
+              !await shouldResetContext(supabase, userContext.id) && 
+              followUpKeywords.some(keyword =>
+                message.text.body.toLowerCase().includes(keyword)
+              );
 
             if (isDirectImageRequest || isFollowUpRequest) {
               let promptText = message.text.body;
@@ -427,22 +487,7 @@ serve(async (req) => {
               console.log('Optimized prompt:', optimizedPrompt);
 
               // Update user's context with both prompt and aspect ratio
-              const { error: contextError } = await supabase
-                .from('whatsapp_users')
-                .update({
-                  last_interaction_type: 'image_generation',
-                  last_image_context: {
-                    prompt: optimizedPrompt,
-                    aspectRatio: aspectRatio,
-                    timestamp: new Date().toISOString()
-                  }
-                })
-                .eq('id', userContext.id);
-
-              if (contextError) {
-                console.error('Error updating user context:', contextError);
-                throw contextError;
-              }
+              await updateImageContext(supabase, userContext.id, optimizedPrompt, aspectRatio);
 
               // Send a status message
               await sendWhatsAppMessage(
@@ -487,8 +532,8 @@ serve(async (req) => {
               }
 
             } else {
-              // Reset image context if it's a regular conversation
-              if (userContext.last_interaction_type === 'image_generation') {
+              // Only reset image context if it has expired
+              if (await shouldResetContext(supabase, userContext.id)) {
                 const { error: contextError } = await supabase
                   .from('whatsapp_users')
                   .update({
