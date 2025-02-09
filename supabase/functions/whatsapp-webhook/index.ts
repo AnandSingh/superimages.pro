@@ -40,7 +40,6 @@ async function generateImageWithReplicate(prompt: string) {
   });
 
   console.log("Starting image generation with prompt:", prompt);
-  console.log("Replicate API Key present:", !!Deno.env.get('REPLICATE_API_KEY'));
   
   try {
     console.log("Making Replicate API call with configuration:", {
@@ -51,8 +50,8 @@ async function generateImageWithReplicate(prompt: string) {
         megapixels: "1",
         num_outputs: 1,
         aspect_ratio: "1:1",
-        output_format: "webp",
-        output_quality: 80,
+        output_format: "png", // Changed from webp to png for better compatibility
+        output_quality: 90,
         num_inference_steps: 4
       }
     });
@@ -66,8 +65,8 @@ async function generateImageWithReplicate(prompt: string) {
           megapixels: "1",
           num_outputs: 1,
           aspect_ratio: "1:1",
-          output_format: "webp",
-          output_quality: 80,
+          output_format: "png", // Changed from webp to png
+          output_quality: 90,
           num_inference_steps: 4
         }
       }
@@ -80,8 +79,14 @@ async function generateImageWithReplicate(prompt: string) {
       throw new Error("Invalid response from image generation API");
     }
 
-    console.log("Generated image URL:", output[0]);
-    return output[0];
+    // Validate the URL
+    const imageUrl = output[0];
+    if (!imageUrl || !imageUrl.startsWith('https://')) {
+      throw new Error("Invalid image URL generated");
+    }
+
+    console.log("Generated image URL:", imageUrl);
+    return imageUrl;
   } catch (error) {
     console.error("Detailed error in generateImageWithReplicate:", {
       error: error,
@@ -92,35 +97,70 @@ async function generateImageWithReplicate(prompt: string) {
   }
 }
 
-// Function to send WhatsApp image message
+// Function to send WhatsApp image message with improved error handling
 async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: string) {
   const accessToken = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
 
-  const response = await fetch(
-    `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: recipient,
-        type: 'image',
-        image: {
-          link: imageUrl,
-          caption: caption
-        }
-      }),
-    }
-  );
+  console.log("Attempting to send WhatsApp image message:", {
+    recipient,
+    imageUrl,
+    caption,
+    phoneNumberId: !!phoneNumberId,
+    accessToken: !!accessToken
+  });
 
-  const result = await response.json();
-  console.log('WhatsApp API image response:', result);
-  return result;
+  if (!accessToken || !phoneNumberId) {
+    throw new Error("Missing WhatsApp configuration");
+  }
+
+  try {
+    // First send a status message
+    await sendWhatsAppMessage(recipient, "Processing your image... 🎨");
+
+    const response = await fetch(
+      `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: recipient,
+          type: 'image',
+          image: {
+            link: imageUrl,
+            caption: caption || ''
+          }
+        }),
+      }
+    );
+
+    const result = await response.json();
+    console.log('WhatsApp API image response:', JSON.stringify(result, null, 2));
+
+    if (!response.ok) {
+      console.error('WhatsApp API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        result
+      });
+      throw new Error(`WhatsApp API error: ${result.error?.message || 'Unknown error'}`);
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Error sending WhatsApp image:', error);
+    // Send error message to user
+    await sendWhatsAppMessage(
+      recipient,
+      "Sorry, I couldn't send the image. I'll try describing it instead..."
+    );
+    throw error;
+  }
 }
 
 // Function to send WhatsApp text message
@@ -327,7 +367,7 @@ serve(async (req) => {
               // Send a status message
               await sendWhatsAppMessage(
                 sender.wa_id,
-                "I'm generating your image now... This might take a few seconds."
+                "I'm generating your image now... This might take a few seconds. 🎨"
               );
 
               // Generate the image using Replicate
