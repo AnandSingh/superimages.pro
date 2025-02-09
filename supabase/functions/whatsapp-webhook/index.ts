@@ -274,16 +274,16 @@ serve(async (req) => {
           throw userError
         }
 
-        // Get the user ID
-        const { data: userIdData, error: userIdError } = await supabase
+        // Get the user data including context
+        const { data: userContext, error: userContextError } = await supabase
           .from('whatsapp_users')
-          .select('id')
+          .select('id, last_interaction_type, last_image_context')
           .eq('phone_number', sender.wa_id)
           .single()
 
-        if (userIdError) {
-          console.error('Error getting user ID:', userIdError)
-          throw userIdError
+        if (userContextError) {
+          console.error('Error getting user context:', userContextError)
+          throw userContextError
         }
 
         // Store the message with appropriate content based on type
@@ -298,7 +298,7 @@ serve(async (req) => {
 
         const messageData = {
           whatsapp_message_id: message.id,
-          user_id: userIdData.id,
+          user_id: userContext.id,
           direction: 'incoming',
           message_type: message.type,
           content: messageContent,
@@ -340,7 +340,7 @@ serve(async (req) => {
             console.log('Processing message:', message.text.body);
             
             // Get conversation history
-            const conversationHistory = await getConversationHistory(supabase, userIdData.id);
+            const conversationHistory = await getConversationHistory(supabase, userContext.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
             // Determine if this is an image generation request
@@ -358,14 +358,30 @@ serve(async (req) => {
               'generate a picture'
             ];
             
-            const isImageRequest = imageKeywords.some(keyword => 
+            const isDirectImageRequest = imageKeywords.some(keyword => 
               message.text.body.toLowerCase().includes(keyword)
             );
 
-            if (isImageRequest) {
+            // Check if this is a follow-up image request based on context
+            const isImageContext = userContext.last_interaction_type === 'image_generation';
+            const followUpKeywords = ['make it', 'change it to', 'i want', 'instead', 'but'];
+            const isFollowUpRequest = isImageContext && followUpKeywords.some(keyword =>
+              message.text.body.toLowerCase().includes(keyword)
+            );
+
+            if (isDirectImageRequest || isFollowUpRequest) {
+              let promptText = message.text.body;
+
+              // If it's a follow-up request, combine with previous context
+              if (isFollowUpRequest && userContext.last_image_context) {
+                const previousPrompt = userContext.last_image_context.prompt;
+                promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
+              }
+
               // First, use Gemini to optimize the prompt
               const promptOptimizationPrompt = `
-                I need to generate an image based on this user request: "${message.text.body}"
+                I need to generate an image based on this user request: "${promptText}"
+                ${isFollowUpRequest ? "This is a modification of a previous image request." : ""}
                 Please create an optimized, clear, and detailed prompt for an AI image generator.
                 The prompt should be descriptive but concise.
                 Just return the optimized prompt, nothing else.
@@ -377,6 +393,23 @@ serve(async (req) => {
               
               const optimizedPrompt = promptResult.response.text().trim();
               console.log('Optimized prompt:', optimizedPrompt);
+
+              // Update user's context
+              const { error: contextError } = await supabase
+                .from('whatsapp_users')
+                .update({
+                  last_interaction_type: 'image_generation',
+                  last_image_context: {
+                    prompt: optimizedPrompt,
+                    timestamp: new Date().toISOString()
+                  }
+                })
+                .eq('id', userContext.id);
+
+              if (contextError) {
+                console.error('Error updating user context:', contextError);
+                throw contextError;
+              }
 
               // Send a status message
               await sendWhatsAppMessage(
@@ -398,7 +431,7 @@ serve(async (req) => {
               // Store the response in the database
               const aiMessageData = {
                 whatsapp_message_id: whatsappResponse.messages[0].id,
-                user_id: userIdData.id,
+                user_id: userContext.id,
                 direction: 'outgoing',
                 message_type: 'image',
                 content: { 
@@ -421,6 +454,22 @@ serve(async (req) => {
               }
 
             } else {
+              // Reset image context if it's a regular conversation
+              if (userContext.last_interaction_type === 'image_generation') {
+                const { error: contextError } = await supabase
+                  .from('whatsapp_users')
+                  .update({
+                    last_interaction_type: 'conversation',
+                    last_image_context: null
+                  })
+                  .eq('id', userContext.id);
+
+                if (contextError) {
+                  console.error('Error updating user context:', contextError);
+                  throw contextError;
+                }
+              }
+
               // Handle regular text message with Gemini AI
               const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
 
@@ -454,7 +503,7 @@ Important instructions:
               // Store AI response in database
               const aiMessageData = {
                 whatsapp_message_id: whatsappResponse.messages[0].id,
-                user_id: userIdData.id,
+                user_id: userContext.id,
                 direction: 'outgoing',
                 message_type: 'text',
                 content: { text: aiResponse },

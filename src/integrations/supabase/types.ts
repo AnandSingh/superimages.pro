@@ -238,6 +238,8 @@ export type Database = {
           first_name: string | null
           id: string
           last_active: string | null
+          last_image_context: Json | null
+          last_interaction_type: string | null
           last_name: string | null
           phone_number: string
         }
@@ -246,6 +248,8 @@ export type Database = {
           first_name?: string | null
           id?: string
           last_active?: string | null
+          last_image_context?: Json | null
+          last_interaction_type?: string | null
           last_name?: string | null
           phone_number: string
         }
@@ -254,6 +258,8 @@ export type Database = {
           first_name?: string | null
           id?: string
           last_active?: string | null
+          last_image_context?: Json | null
+          last_interaction_type?: string | null
           last_name?: string | null
           phone_number?: string
         }
