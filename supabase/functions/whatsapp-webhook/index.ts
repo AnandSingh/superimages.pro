@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -70,6 +71,35 @@ For example:
 "Show me superheroes"
 "Now make them more colorful"
 "Generate a landscape"`;
+
+const INITIAL_GREETING = `Hi! I'm an AI image generator that can create any image you imagine! 🎨
+
+Try these example commands:
+"Show me a magical forest"
+"Generate a futuristic city"
+"Create a cute puppy"
+
+Or just say what you want to see, like:
+"I want an image of mountains"
+"Show me space nebulas"
+"Make a dragon"`;
+
+const HOW_IT_WORKS_GUIDE = `I can generate any kind of image you want! Here's how to use me:
+
+1. New Images:
+Just use phrases like:
+- "Show me..."
+- "I want a picture of..."
+- "Generate..."
+- "Create..."
+
+2. Modify Images:
+After I create an image, you can modify it:
+- "Make it more colorful"
+- "Change it to night time"
+- "Add more details"
+
+Try it now! What would you like me to create?`;
 
 const imageKeywords = [
   // Want/Need variations
@@ -307,6 +337,7 @@ serve(async (req) => {
           timestamp: message.timestamp
         });
 
+        // User data handling
         const { data: userData, error: userError } = await supabase
           .from('whatsapp_users')
           .upsert({
@@ -384,19 +415,36 @@ serve(async (req) => {
           try {
             console.log('Processing message:', message.text.body);
             
+            const messageText = message.text.body.toLowerCase();
+            
+            // Check for initial greetings or help requests
+            if (messageText === 'hi' || messageText === 'hello' || messageText === 'hey') {
+              await sendWhatsAppMessage(sender.wa_id, INITIAL_GREETING);
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+
+            if (messageText.includes('how') && (messageText.includes('work') || messageText.includes('use'))) {
+              await sendWhatsAppMessage(sender.wa_id, HOW_IT_WORKS_GUIDE);
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+            
             const conversationHistory = await getConversationHistory(supabase, userContext.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
             const isDirectImageRequest = imageKeywords.some(keyword => 
-              message.text.body.toLowerCase().includes(keyword)
+              messageText.includes(keyword)
             );
 
             const isImageContext = userContext.last_interaction_type === 'image_generation';
             const isModificationRequest = isImageContext && (
-              modificationKeywords.some(keyword => message.text.body.toLowerCase().includes(keyword)) ||
-              message.text.body.toLowerCase().match(/^(make|change|turn|set)\s+the\s+/) ||
-              message.text.body.toLowerCase().startsWith('but') ||
-              message.text.body.toLowerCase().startsWith('and')
+              modificationKeywords.some(keyword => messageText.includes(keyword)) ||
+              messageText.match(/^(make|change|turn|set)\s+the\s+/) ||
+              messageText.startsWith('but') ||
+              messageText.startsWith('and')
             );
 
             if (isDirectImageRequest || isModificationRequest) {
@@ -481,7 +529,7 @@ Just return the optimized prompt text, nothing else.`;
                 const whatsappResponse = await sendWhatsAppImage(
                   sender.wa_id,
                   imageUrl,
-                  "Here's your generated image! 🎨"
+                  "Here's your generated image! 🎨\n\nYou can modify this image by saying things like:\n- Make it more vibrant\n- Change the lighting\n- Add more details"
                 );
                 
                 const aiMessageData = {
@@ -544,7 +592,8 @@ Important instructions:
 - Don't mention that you're a chatbot or AI assistant
 - Don't say you can't remember - use the conversation history provided
 - Respond naturally as if you were in an ongoing conversation
-- Keep responses brief and to the point`;
+- Keep responses brief and to the point
+- After your response, always remind the user about image generation capabilities with a relevant example based on the context of the conversation`;
               
               const result = await model.generateContent({
                 contents: [{
@@ -557,7 +606,14 @@ Important instructions:
               
               console.log('AI generated response:', aiResponse);
 
-              const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse)
+              // Send the AI response
+              const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse);
+              
+              // After any regular conversation, send the image guide
+              await sendWhatsAppMessage(
+                sender.wa_id,
+                "By the way, I can create images too! Try saying:\n\"Show me a sunset over mountains\"\nor\n\"Generate a magical forest\""
+              );
               
               const aiMessageData = {
                 whatsapp_message_id: whatsappResponse.messages[0].id,
