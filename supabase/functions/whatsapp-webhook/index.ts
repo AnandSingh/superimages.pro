@@ -388,8 +388,17 @@ Follow these rules:
 - Include relevant style terms (cinematic, dynamic, macro, etc.)
 - Add composition and lighting details when relevant
 - Keep it concise and direct
-- Don't use words like "generate", "create", or "make"
+- Don't use words like "generate", "create", "make", "want", "give me"
 - Don't add explanations or extra text
+- Ignore any bot responses in the text
+- Treat "photo", "image", "picture" as the same thing
+
+Example inputs and outputs:
+Input: "I want a photo of a black sports car"
+Output: "sleek black sports car, dramatic automotive photography, studio lighting, glossy finish, cinematic"
+
+Input: "Can you make an image of a cat?"
+Output: "detailed cat portrait, soft natural lighting, shallow depth of field"
 
 Just return the optimized prompt text, nothing else.`;
 
