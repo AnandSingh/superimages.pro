@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -46,8 +45,8 @@ async function getConversationHistory(supabase: any, userId: string, limit = 5) 
 
 // Function to detect aspect ratio from text
 function detectAspectRatio(text: string): string {
-  const portraitKeywords = ['portrait', 'vertical', 'tall'];
-  const landscapeKeywords = ['landscape', 'horizontal', 'wide'];
+  const portraitKeywords = ['portrait', 'vertical', 'tall', '3:4'];
+  const landscapeKeywords = ['landscape', 'horizontal', 'wide', '4:3'];
   const wideScreenKeywords = ['widescreen', '16:9', 'cinematic'];
   
   text = text.toLowerCase();
@@ -384,26 +383,37 @@ serve(async (req) => {
             );
 
             const isImageContext = userContext.last_interaction_type === 'image_generation';
+            const hasExistingContext = !await shouldResetContext(supabase, userContext.id);
+            
+            const aspectRatioKeywords = ['3:4', '4:3', '16:9', 'portrait', 'landscape', 'vertical', 'horizontal', 'widescreen'];
+            const isAspectRatioRequest = aspectRatioKeywords.some(keyword => 
+              message.text.body.toLowerCase().includes(keyword)
+            );
+
             const followUpKeywords = ['make it', 'change it to', 'i want', 'instead', 'but'];
             const isFollowUpRequest = isImageContext && 
-              !await shouldResetContext(supabase, userContext.id) && 
-              followUpKeywords.some(keyword =>
+              hasExistingContext && 
+              (followUpKeywords.some(keyword =>
                 message.text.body.toLowerCase().includes(keyword)
-              );
+              ) || isAspectRatioRequest);
 
             if (isDirectImageRequest || isFollowUpRequest) {
               let promptText = message.text.body;
               let aspectRatio = detectAspectRatio(promptText);
+              let previousPrompt = '';
 
               if (isFollowUpRequest && userContext.last_image_context) {
-                const previousPrompt = userContext.last_image_context.prompt;
-                const previousAspectRatio = userContext.last_image_context.aspectRatio || '1:1';
+                previousPrompt = userContext.last_image_context.prompt;
                 
-                if (aspectRatio === '1:1' && previousAspectRatio !== '1:1') {
-                  aspectRatio = previousAspectRatio;
+                if (isAspectRatioRequest) {
+                  promptText = previousPrompt;
+                } else if (aspectRatio === '1:1' && userContext.last_image_context.aspectRatio) {
+                  aspectRatio = userContext.last_image_context.aspectRatio;
                 }
                 
-                promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
+                if (!isAspectRatioRequest) {
+                  promptText = `${message.text.body} (based on previous request: ${previousPrompt})`;
+                }
               }
 
               const promptOptimizationPrompt = `
