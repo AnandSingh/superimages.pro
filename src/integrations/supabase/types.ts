@@ -40,29 +40,35 @@ export type Database = {
         Row: {
           created_at: string | null
           credits_amount: number
+          currency: string
           id: string
           is_active: boolean | null
           metadata: Json | null
           name: string
           price: number
+          stripe_price_id: string | null
         }
         Insert: {
           created_at?: string | null
           credits_amount: number
+          currency?: string
           id?: string
           is_active?: boolean | null
           metadata?: Json | null
           name: string
           price: number
+          stripe_price_id?: string | null
         }
         Update: {
           created_at?: string | null
           credits_amount?: number
+          currency?: string
           id?: string
           is_active?: boolean | null
           metadata?: Json | null
           name?: string
           price?: number
+          stripe_price_id?: string | null
         }
         Relationships: []
       }
@@ -226,6 +232,63 @@ export type Database = {
           },
         ]
       }
+      payment_transactions: {
+        Row: {
+          amount: number
+          created_at: string | null
+          currency: string
+          id: string
+          metadata: Json | null
+          product_id: string | null
+          status: Database["public"]["Enums"]["payment_status"]
+          stripe_customer_id: string | null
+          stripe_payment_intent_id: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          currency?: string
+          id?: string
+          metadata?: Json | null
+          product_id?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+          stripe_customer_id?: string | null
+          stripe_payment_intent_id?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          currency?: string
+          id?: string
+          metadata?: Json | null
+          product_id?: string | null
+          status?: Database["public"]["Enums"]["payment_status"]
+          stripe_customer_id?: string | null
+          stripe_payment_intent_id?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_transactions_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "credit_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_credits: {
         Row: {
           balance: number
@@ -345,6 +408,7 @@ export type Database = {
         | "FINANCIAL_ADVICE"
         | "CLARIFICATION"
         | "CONVERSATION"
+      payment_status: "pending" | "completed" | "failed" | "refunded"
       product_type: "image_generation"
       transaction_type: "purchase" | "usage" | "refund" | "bonus"
     }
