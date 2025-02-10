@@ -36,7 +36,6 @@ serve(async (req) => {
     let event;
 
     try {
-      // Changed from constructEvent to constructEventAsync
       event = await stripe.webhooks.constructEventAsync(
         body,
         signature,
@@ -62,13 +61,12 @@ serve(async (req) => {
       case 'invoice.paid': {
         const subscription = event.type === 'customer.subscription.created' 
           ? event.data.object 
-          : event.data.object.subscription;
+          : await stripe.subscriptions.retrieve(event.data.object.subscription);
         await handleSubscriptionEvent(subscription, supabase, stripe);
         break;
       }
       case 'customer.subscription.updated': {
         const subscription = event.data.object;
-        // Handle subscription updates (e.g., plan changes)
         console.log('Subscription updated:', subscription.id);
         await handleSubscriptionEvent(subscription, supabase, stripe);
         break;
@@ -113,11 +111,17 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent,
     throw updateError;
   }
 
+  const userId = paymentIntent.metadata.user_id;
+  if (!userId) {
+    console.error('No user_id found in payment intent metadata');
+    throw new Error('No user_id found in payment intent metadata');
+  }
+
   // Add credits to user
   const { error: creditError } = await supabase.rpc(
     'add_user_credits',
     {
-      p_user_id: paymentIntent.metadata.user_id,
+      p_user_id: userId,
       p_amount: parseInt(paymentIntent.metadata.credits_amount),
       p_transaction_type: 'purchase',
       p_product_type: 'image_generation',
@@ -137,7 +141,7 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent,
   const { data: userData } = await supabase
     .from('whatsapp_users')
     .select('phone_number')
-    .eq('id', paymentIntent.metadata.user_id)
+    .eq('id', userId)
     .single();
 
   if (userData) {
@@ -155,7 +159,8 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent,
 
 async function handleSubscriptionEvent(subscription: any, supabase: any, stripe: any) {
   // Get the subscription details including the price
-  const price = await stripe.prices.retrieve(subscription.items.data[0].price.id);
+  const items = subscription.items.data[0];
+  const price = await stripe.prices.retrieve(items.price.id);
   const product = await stripe.products.retrieve(price.product);
   
   // Get user_id from the subscription metadata
@@ -163,13 +168,15 @@ async function handleSubscriptionEvent(subscription: any, supabase: any, stripe:
   
   if (!userId) {
     console.error('No user_id found in subscription metadata');
-    return;
+    throw new Error('No user_id found in subscription metadata');
   }
 
   // Add credits based on the subscription plan
-  const creditsAmount = product.metadata.credits_amount 
-    ? parseInt(product.metadata.credits_amount) 
-    : 0;
+  const creditsAmount = subscription.metadata.credits_amount 
+    ? parseInt(subscription.metadata.credits_amount) 
+    : (product.metadata.credits_amount 
+      ? parseInt(product.metadata.credits_amount) 
+      : 0);
 
   if (creditsAmount > 0) {
     const { error: creditError } = await supabase.rpc(
