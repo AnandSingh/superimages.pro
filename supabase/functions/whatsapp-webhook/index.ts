@@ -104,10 +104,7 @@ Example Output:
 "Professional portrait photography of a detailed, high-quality scene showing a focused 30-year-old executive woman in a tailored navy suit sitting at her modern glass desk, actively reviewing documents with a determined expression.
 The foreground has an organized array of minimalist office supplies, a sleek laptop, and a half-filled coffee cup casting subtle reflections on the glass surface.
 The background has floor-to-ceiling windows overlooking a dramatic city skyline with skyscrapers catching the light.
-The lighting is soft morning sunlight filtering through the windows, creating gentle shadows and rim lighting around the subject, 8k resolution, sharp focus, cinematic composition."
-
-Input: "${promptText}"
-Output:`;
+The lighting is soft morning sunlight filtering through the windows, creating gentle shadows and rim lighting around the subject, 8k resolution, sharp focus, cinematic composition."`;
 
 const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
 
@@ -204,6 +201,11 @@ async function generateImageWithReplicate(prompt: string) {
   console.log("Starting image generation with prompt:", prompt);
   
   try {
+    // Ensure the prompt is properly formatted
+    if (!prompt || typeof prompt !== 'string') {
+      throw new Error("Invalid prompt format");
+    }
+
     console.log("Making Replicate API call with configuration:", {
       model: "black-forest-labs/flux-schnell",
       input: {
@@ -727,7 +729,7 @@ serve(async (req) => {
               });
             }
 
-            // Use the new IMAGE_OPTIMIZATION_PROMPT for better results
+            // Optimize the prompt using the new format
             const promptOptimizationPrompt = `${IMAGE_OPTIMIZATION_PROMPT}
 
 Input: "${promptText}"`;
