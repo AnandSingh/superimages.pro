@@ -56,20 +56,30 @@ serve(async (req) => {
         const invoice = event.data.object;
         console.log('Processing paid invoice:', invoice.id);
         
-        // Get customer and subscription details
+        // Get customer phone number from invoice
+        const customerPhone = invoice.customer_phone;
+        if (!customerPhone) {
+          console.error('No customer phone number found in invoice');
+          throw new Error('No customer phone number found in invoice');
+        }
+
+        // Find user by phone number
+        const { data: userData, error: userError } = await supabase
+          .from('whatsapp_users')
+          .select('id, phone_number')
+          .eq('phone_number', customerPhone)
+          .single();
+
+        if (userError || !userData) {
+          console.error('Error finding user by phone number:', userError || 'No user found');
+          throw new Error(`No user found with phone number ${customerPhone}`);
+        }
+
+        // Get subscription and product details
         const subscription = invoice.subscription 
           ? await stripe.subscriptions.retrieve(invoice.subscription)
           : null;
         
-        // Get user_id either from subscription metadata or invoice metadata
-        const userId = subscription?.metadata?.user_id || invoice.metadata?.user_id;
-        
-        if (!userId) {
-          console.error('No user_id found in metadata');
-          throw new Error('No user_id found in metadata');
-        }
-
-        // Get the price and product information
         let creditsAmount = 0;
         let productId = '';
 
@@ -102,7 +112,7 @@ serve(async (req) => {
           const { error: creditError } = await supabase.rpc(
             'add_user_credits',
             {
-              p_user_id: userId,
+              p_user_id: userData.id,
               p_amount: creditsAmount,
               p_transaction_type: 'purchase',
               p_product_type: 'image_generation',
@@ -120,27 +130,19 @@ serve(async (req) => {
           }
 
           // Send WhatsApp notification
-          const { data: userData } = await supabase
-            .from('whatsapp_users')
-            .select('phone_number')
-            .eq('id', userId)
-            .single();
+          const message = subscription
+            ? `🎉 Your subscription credits (${creditsAmount}) have been added to your account.\n\nSend "balance" to check your new credit balance.`
+            : `🎉 Payment successful! ${creditsAmount} credits have been added to your account.\n\nSend "balance" to check your new credit balance.`;
 
-          if (userData) {
-            const message = subscription
-              ? `🎉 Your subscription credits (${creditsAmount}) have been added to your account.\n\nSend "balance" to check your new credit balance.`
-              : `🎉 Payment successful! ${creditsAmount} credits have been added to your account.\n\nSend "balance" to check your new credit balance.`;
-
-            await supabase.functions.invoke('whatsapp-send', {
-              body: {
-                message_type: 'text',
-                recipient: userData.phone_number,
-                content: {
-                  text: message
-                }
+          await supabase.functions.invoke('whatsapp-send', {
+            body: {
+              message_type: 'text',
+              recipient: customerPhone,
+              content: {
+                text: message
               }
-            });
-          }
+            }
+          });
         }
         break;
       }
