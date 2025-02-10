@@ -62,7 +62,7 @@ const greetingKeywords = [
 ];
 
 // Enhanced system prompt for AI with pricing knowledge
-const AI_SYSTEM_PROMPT = `You are a helpful WhatsApp image generation assistant. Here's how to help users:
+const CHAT_SYSTEM_PROMPT = `You are a helpful WhatsApp image generation assistant. Here's how to help users:
 
 CORE COMMANDS - Guide users to these specific commands:
 
@@ -83,7 +83,38 @@ CORE COMMANDS - Guide users to these specific commands:
    - "Generate..."
    - "Create..."
    - "Make me..."
-   Example: "To create an image, start with 'show me' or 'generate'. For example: 'show me a sunset'`
+   Example: "To create an image, start with 'show me' or 'generate'. For example: 'show me a sunset'"`;
+
+const IMAGE_OPTIMIZATION_PROMPT = `You are an expert image prompt engineer. Transform the user's request into a highly detailed, artistic prompt that will generate high-quality images. Follow these guidelines:
+
+1. Artistic Style:
+   - Always specify art style (e.g., digital art, oil painting, photography)
+   - Include relevant artistic techniques (e.g., volumetric lighting, depth of field)
+
+2. Composition:
+   - Add composition details (e.g., front view, aerial perspective)
+   - Specify framing and focus (e.g., close-up, wide shot)
+
+3. Atmosphere:
+   - Include lighting details (e.g., golden hour, dramatic shadows)
+   - Add atmospheric elements (e.g., mist, particles)
+
+4. Quality Markers:
+   - Add technical quality terms (e.g., highly detailed, sharp focus)
+   - Include render quality (e.g., 8k, photorealistic)
+
+5. Enhancement Words:
+   - masterpiece, professional, perfect composition
+   - cinematic, award-winning, stunning
+
+Structure the prompt to emphasize the main subject while incorporating these elements naturally. Do not explain changes, only output the enhanced prompt.
+
+Examples:
+Input: "show me a cat"
+Output: "A majestic cat in golden afternoon light, professional photography, sharp focus, detailed fur texture, bokeh background, perfect composition, cinematic atmosphere, 8k resolution"
+
+Input: "create a castle"
+Output: "Epic medieval castle on a clifftop, dramatic stormy sky, volumetric fog, architectural photography, ultra detailed stonework, dramatic lighting, professional composition, award-winning photograph, 8k resolution"`;
 
 const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
 
@@ -703,11 +734,10 @@ serve(async (req) => {
               });
             }
 
-            const promptOptimizationPrompt = `${AI_SYSTEM_PROMPT}
+            // Use the new IMAGE_OPTIMIZATION_PROMPT for better results
+            const promptOptimizationPrompt = `${IMAGE_OPTIMIZATION_PROMPT}
 
-Current request to transform: "${promptText}"
-
-Return only the generated prompt, no explanations.`;
+Input: "${promptText}"`;
 
             console.log('Optimizing prompt with AI...', promptText);
             
@@ -848,7 +878,7 @@ ${conversationHistory}
 Current message:
 User: ${message.text.body}
 
-${AI_SYSTEM_PROMPT}
+${CHAT_SYSTEM_PROMPT}
 
 Important:
 1. First understand what the user wants (checking balance, buying credits, or creating images)
