@@ -380,6 +380,34 @@ To purchase more credits, you can start with our ${cheapestProduct?.name} (${che
 Send "buy credits" to see available packages.`;
 }
 
+async function getDynamicCreditsGuide(supabase: any): Promise<string> {
+  const { data: products, error } = await supabase
+    .from('credit_products')
+    .select('*')
+    .eq('is_active', true)
+    .order('credits_amount', { ascending: true });
+
+  if (error || !products?.length) {
+    return 'Credit packages are currently unavailable. Please try again later.';
+  }
+
+  const packagesText = products.map(product => 
+    `${product.name}: $${(product.price / 100).toFixed(2)}
+- ${product.credits_amount} credits`
+  ).join('\n\n');
+
+  return `Here are our credit packages:
+
+${packagesText}
+
+Each image generation costs 1 credit.
+
+To purchase, just reply with:
+${products.map(p => `"buy ${p.name.toLowerCase()}" for ${p.name}`).join('\n')}
+
+Or type "balance" to check your current credits.`;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -521,7 +549,8 @@ serve(async (req) => {
             
             // Check for credit-related commands
             if (messageText === 'credits' || messageText === 'buy credits') {
-              await sendWhatsAppMessage(sender.wa_id, CREDITS_GUIDE);
+              const creditsGuide = await getDynamicCreditsGuide(supabase);
+              await sendWhatsAppMessage(sender.wa_id, creditsGuide);
               return new Response(JSON.stringify({ success: true }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
