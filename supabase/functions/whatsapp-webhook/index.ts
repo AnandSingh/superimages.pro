@@ -769,8 +769,15 @@ Return only the generated prompt, no explanations.`;
                   sender.wa_id,
                   "I apologize, but I encountered an error while generating your image. Your credit has been refunded. Please try again."
                 );
+                return new Response(JSON.stringify({ success: true }), {
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
               }
-
+              
+              // Return after successful image generation
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
             } else {
               if (userContext.last_interaction_type === 'image_generation') {
                 const { error: contextError } = await supabase
@@ -844,7 +851,6 @@ Important instructions:
                 throw aiMessageError
               }
             }
-
           } catch (error) {
             console.error('Error generating or sending AI response:', error)
             await sendWhatsAppMessage(
