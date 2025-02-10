@@ -305,6 +305,58 @@ async function sendWhatsAppMessage(recipient: string, text: string) {
   return result;
 }
 
+async function checkAndDeductCredits(userId: string): Promise<boolean> {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
+
+  const { data, error } = await supabase.rpc('use_credits', {
+    p_user_id: userId,
+    p_amount: 1,
+    p_product_type: 'image_generation',
+    p_metadata: {}
+  });
+
+  if (error) {
+    console.error('Error checking credits:', error);
+    return false;
+  }
+
+  return data;
+}
+
+async function getCreditsMessage(userId: string): Promise<string> {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
+
+  const { data: creditData } = await supabase
+    .from('user_credits')
+    .select('balance')
+    .eq('user_id', userId)
+    .single();
+
+  const { data: products } = await supabase
+    .from('credit_products')
+    .select('*')
+    .eq('is_active', true)
+    .order('credits_amount', { ascending: true })
+    .limit(1);
+
+  const balance = creditData?.balance || 0;
+  const cheapestProduct = products?.[0];
+
+  return `You have ${balance} credit${balance !== 1 ? 's' : ''} remaining.
+
+Each image generation costs 1 credit.${balance === 0 ? `
+
+To purchase more credits, you can start with our ${cheapestProduct?.name} (${cheapestProduct?.credits_amount} credits) for $${(cheapestProduct?.price || 0) / 100}.` : ''}
+
+Send "buy credits" to see available packages.`;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })

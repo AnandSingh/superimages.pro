@@ -17,9 +17,18 @@ const Index = () => {
         <h1 className="text-4xl sm:text-5xl font-medium tracking-tight text-foreground mb-6 animate-fadeIn" style={{ animationDelay: "0.2s" }}>
           Send WhatsApp Messages
         </h1>
-        <p className="text-lg text-muted-foreground mb-8 animate-fadeIn" style={{ animationDelay: "0.3s" }}>
+        <p className="text-lg text-muted-foreground mb-4 animate-fadeIn" style={{ animationDelay: "0.3s" }}>
           Test the WhatsApp Cloud API integration by sending messages to any WhatsApp number.
         </p>
+        <div className="text-sm text-muted-foreground mb-8 animate-fadeIn space-y-2" style={{ animationDelay: "0.4s" }}>
+          <p>Available commands:</p>
+          <ul className="space-y-1">
+            <li>"credits" - Check your credit balance</li>
+            <li>"buy credits" - View available credit packages</li>
+            <li>"buy [package name]" - Purchase a credit package</li>
+            <li>"show me [description]" - Generate an image (costs 1 credit)</li>
+          </ul>
+        </div>
       </motion.div>
       
       <motion.div

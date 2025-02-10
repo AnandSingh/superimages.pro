@@ -36,6 +36,74 @@ export type Database = {
         }
         Relationships: []
       }
+      credit_products: {
+        Row: {
+          created_at: string | null
+          credits_amount: number
+          id: string
+          is_active: boolean | null
+          metadata: Json | null
+          name: string
+          price: number
+        }
+        Insert: {
+          created_at?: string | null
+          credits_amount: number
+          id?: string
+          is_active?: boolean | null
+          metadata?: Json | null
+          name: string
+          price: number
+        }
+        Update: {
+          created_at?: string | null
+          credits_amount?: number
+          id?: string
+          is_active?: boolean | null
+          metadata?: Json | null
+          name?: string
+          price?: number
+        }
+        Relationships: []
+      }
+      credit_transactions: {
+        Row: {
+          amount: number
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          product_type: Database["public"]["Enums"]["product_type"]
+          transaction_type: Database["public"]["Enums"]["transaction_type"]
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          product_type: Database["public"]["Enums"]["product_type"]
+          transaction_type: Database["public"]["Enums"]["transaction_type"]
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          product_type?: Database["public"]["Enums"]["product_type"]
+          transaction_type?: Database["public"]["Enums"]["transaction_type"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expense_summaries: {
         Row: {
           category_totals: Json
@@ -232,6 +300,35 @@ export type Database = {
           },
         ]
       }
+      user_credits: {
+        Row: {
+          balance: number
+          created_at: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          balance?: number
+          created_at?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          balance?: number
+          created_at?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_credits_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "whatsapp_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_users: {
         Row: {
           created_at: string | null
@@ -270,7 +367,31 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      add_user_credits: {
+        Args: {
+          p_user_id: string
+          p_amount: number
+          p_transaction_type: Database["public"]["Enums"]["transaction_type"]
+          p_product_type: Database["public"]["Enums"]["product_type"]
+          p_metadata?: Json
+        }
+        Returns: undefined
+      }
+      get_user_credits: {
+        Args: {
+          p_phone_number: string
+        }
+        Returns: number
+      }
+      use_credits: {
+        Args: {
+          p_user_id: string
+          p_amount: number
+          p_product_type: Database["public"]["Enums"]["product_type"]
+          p_metadata?: Json
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       expense_category:
@@ -289,6 +410,8 @@ export type Database = {
         | "FINANCIAL_ADVICE"
         | "CLARIFICATION"
         | "CONVERSATION"
+      product_type: "image_generation"
+      transaction_type: "purchase" | "usage" | "refund" | "bonus"
     }
     CompositeTypes: {
       [_ in never]: never
