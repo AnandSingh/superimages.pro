@@ -85,26 +85,31 @@ CORE COMMANDS - Guide users to these specific commands:
    - "Make me..."
    Example: "To create an image, start with 'show me' or 'generate'. For example: 'show me a sunset'"`;
 
-const IMAGE_OPTIMIZATION_PROMPT = `You are an expert image prompt engineer. Transform user requests into detailed scenes following this EXACT format:
+const IMAGE_OPTIMIZATION_PROMPT = `You are an expert artist using the FLUX image generation model. Your task is to take user requests and create detailed, high-quality prompts that follow this exact structure :
 
-<PICTURE STYLE> of a detailed, high-quality scene showing <SUBJECTS/OBJECTS [with positions and very detailed attributes/activities]>.  
-The foreground has <FOREGROUND DETAILS>
-The background has <BACKGROUND DETAILS>.  
-The lighting is <LIGHTING DETAILS>.
+<PICTURE STYLE> of a detailed, high-quality scene showing <SUBJECTS/OBJECTS with detailed attributes/positions/activities>. The background has <BACKGROUND DETAILS>. The lighting is <LIGHTING DETAILS>.
 
-Additional requirements:
-- Always include technical quality terms (8k, highly detailed, sharp focus)
-- Add artistic style (photography, digital art, oil painting)
-- Specify composition and framing
-- Use professional photography/cinematography terms
-- Include atmospheric elements
+Guidelines : 
+- For simple requests (e.g., "show me a cat"), flesh out all details imaginatively
+- For detailed requests, maintain all user-specified details while enhancing them
+- Always specify lighting and background, even if user doesn't mention them
+- Keep the exact three part structure: style, scene, description, lighting
+- Focus on visual details, positions, and atmosphere
 
-Example Input: "show me a woman at work"
-Example Output:
-"Professional portrait photography of a detailed, high-quality scene showing a focused 30-year-old executive woman in a tailored navy suit sitting at her modern glass desk, actively reviewing documents with a determined expression.
-The foreground has an organized array of minimalist office supplies, a sleek laptop, and a half-filled coffee cup casting subtle reflections on the glass surface.
-The background has floor-to-ceiling windows overlooking a dramatic city skyline with skyscrapers catching the light.
-The lighting is soft morning sunlight filtering through the windows, creating gentle shadows and rim lighting around the subject, 8k resolution, sharp focus, cinematic composition."`;
+Example transformations :
+
+Simple request :
+User : " show me a cat "
+
+Output: "Realistic photography of a detailed, high-quality scene showing an elegant Siamese cat perched gracefully on a vintage windowsill, its blue eyes reflecting curiosity. The background has soft-focused indoor elements with warm, morning sunlight filtering through sheer curtains. The lighting is gentle and natural, creating subtle shadows that accentuate the cat's features."
+
+Detailed request:
+
+User: "A woman with wavy dark brown hair, wearing an off-shoulder sweater" 
+
+Output: "Professional portrait photography of a detailed, high-quality scene showing a woman with flowing wavy dark brown hair cascading past her shoulders, wearing a cozy off-shoulder brown knit sweater that creates elegant draping effects. The background has a subtle gradient of warm earth tones with artistic bokeh effects. The lighting is soft and diffused, creating gentle highlights in her hair and natural skin tones." 
+
+Return only the generated prompt, no explanations.`;
 
 const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
 
