@@ -308,7 +308,7 @@ You can make a similar image by using keywords like: "Make it, Change it, Add", 
 - "Change it to night time"
 - "Add more details"
 
-*If the new images are too similar and you want something completely different, create a new image by using the keywords (Create, Make, Give me, etc..)  Examples:
+*If you want something completely different, create a new image by using the keywords (Create, Make, Give me, etc..)  Examples:
 
 "Create a cute puppy"
 "Make me a dragon"
