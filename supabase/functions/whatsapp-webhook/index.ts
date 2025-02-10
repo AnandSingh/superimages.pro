@@ -410,6 +410,31 @@ ${products.map(p => `"buy ${p.name.toLowerCase()}" for ${p.name}`).join('\n')}
 Or type "balance" to check your current credits.`;
 }
 
+async function getConversationHistory(supabase: any, userId: string): Promise<string> {
+  const { data: messages, error } = await supabase
+    .from('messages')
+    .select('direction, content')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  if (error) {
+    console.error('Error fetching conversation history:', error);
+    return 'Error fetching conversation history.';
+  }
+
+  const formattedMessages = messages
+    .map(msg => {
+      const prefix = msg.direction === 'incoming' ? 'User: ' : 'You: ';
+      const content = msg.content?.text || 'No text content';
+      return prefix + content;
+    })
+    .reverse()
+    .join('\n');
+
+  return formattedMessages || 'No previous conversation.';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
