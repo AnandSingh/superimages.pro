@@ -51,63 +51,35 @@ serve(async (req) => {
 
     console.log('Processing webhook event:', event.type);
 
-    if (event.type === 'payment_intent.succeeded') {
-      const paymentIntent = event.data.object;
-      
-      // Update payment transaction status
-      const { error: updateError } = await supabase
-        .from('payment_transactions')
-        .update({ 
-          status: 'completed',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('stripe_payment_intent_id', paymentIntent.id);
-
-      if (updateError) {
-        console.error('Error updating payment status:', updateError);
-        throw updateError;
+    switch (event.type) {
+      case 'payment_intent.succeeded': {
+        const paymentIntent = event.data.object;
+        await handlePaymentIntentSucceeded(paymentIntent, supabase);
+        break;
       }
-
-      // Add credits to user
-      const { error: creditError } = await supabase.rpc(
-        'add_user_credits',
-        {
-          p_user_id: paymentIntent.metadata.user_id,
-          p_amount: parseInt(paymentIntent.metadata.credits_amount),
-          p_transaction_type: 'purchase',
-          p_product_type: 'image_generation',
-          p_metadata: {
-            payment_intent_id: paymentIntent.id,
-            product_id: paymentIntent.metadata.product_id,
-          },
-        }
-      );
-
-      if (creditError) {
-        console.error('Error adding credits:', creditError);
-        throw creditError;
+      case 'customer.subscription.created':
+      case 'invoice.paid': {
+        const subscription = event.type === 'customer.subscription.created' 
+          ? event.data.object 
+          : event.data.object.subscription;
+        await handleSubscriptionEvent(subscription, supabase, stripe);
+        break;
       }
-
-      // Send WhatsApp notification
-      const { data: userData } = await supabase
-        .from('whatsapp_users')
-        .select('phone_number')
-        .eq('id', paymentIntent.metadata.user_id)
-        .single();
-
-      if (userData) {
-        await supabase.functions.invoke('whatsapp-send', {
-          body: {
-            message_type: 'text',
-            recipient: userData.phone_number,
-            content: {
-              text: `🎉 Payment successful! ${paymentIntent.metadata.credits_amount} credits have been added to your account.
-
-Send "balance" to check your new credit balance.`
-            }
-          }
-        });
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object;
+        // Handle subscription updates (e.g., plan changes)
+        console.log('Subscription updated:', subscription.id);
+        await handleSubscriptionEvent(subscription, supabase, stripe);
+        break;
       }
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object;
+        console.log('Subscription cancelled:', subscription.id);
+        // You might want to handle subscription cancellations differently
+        break;
+      }
+      default:
+        console.log(`Unhandled event type: ${event.type}`);
     }
 
     return new Response(JSON.stringify({ received: true }), {
@@ -123,4 +95,119 @@ Send "balance" to check your new credit balance.`
       },
     );
   }
-})
+});
+
+async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent, supabase: any) {
+  // Update payment transaction status
+  const { error: updateError } = await supabase
+    .from('payment_transactions')
+    .update({ 
+      status: 'completed',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('stripe_payment_intent_id', paymentIntent.id);
+
+  if (updateError) {
+    console.error('Error updating payment status:', updateError);
+    throw updateError;
+  }
+
+  // Add credits to user
+  const { error: creditError } = await supabase.rpc(
+    'add_user_credits',
+    {
+      p_user_id: paymentIntent.metadata.user_id,
+      p_amount: parseInt(paymentIntent.metadata.credits_amount),
+      p_transaction_type: 'purchase',
+      p_product_type: 'image_generation',
+      p_metadata: {
+        payment_intent_id: paymentIntent.id,
+        product_id: paymentIntent.metadata.product_id,
+      },
+    }
+  );
+
+  if (creditError) {
+    console.error('Error adding credits:', creditError);
+    throw creditError;
+  }
+
+  // Send WhatsApp notification
+  const { data: userData } = await supabase
+    .from('whatsapp_users')
+    .select('phone_number')
+    .eq('id', paymentIntent.metadata.user_id)
+    .single();
+
+  if (userData) {
+    await supabase.functions.invoke('whatsapp-send', {
+      body: {
+        message_type: 'text',
+        recipient: userData.phone_number,
+        content: {
+          text: `🎉 Payment successful! ${paymentIntent.metadata.credits_amount} credits have been added to your account.\n\nSend "balance" to check your new credit balance.`
+        }
+      }
+    });
+  }
+}
+
+async function handleSubscriptionEvent(subscription: any, supabase: any, stripe: any) {
+  // Get the subscription details including the price
+  const price = await stripe.prices.retrieve(subscription.items.data[0].price.id);
+  const product = await stripe.products.retrieve(price.product);
+  
+  // Get user_id from the subscription metadata
+  const userId = subscription.metadata.user_id;
+  
+  if (!userId) {
+    console.error('No user_id found in subscription metadata');
+    return;
+  }
+
+  // Add credits based on the subscription plan
+  const creditsAmount = product.metadata.credits_amount 
+    ? parseInt(product.metadata.credits_amount) 
+    : 0;
+
+  if (creditsAmount > 0) {
+    const { error: creditError } = await supabase.rpc(
+      'add_user_credits',
+      {
+        p_user_id: userId,
+        p_amount: creditsAmount,
+        p_transaction_type: 'purchase',
+        p_product_type: 'image_generation',
+        p_metadata: {
+          subscription_id: subscription.id,
+          product_id: product.id,
+          invoice_id: subscription.latest_invoice,
+        },
+      }
+    );
+
+    if (creditError) {
+      console.error('Error adding subscription credits:', creditError);
+      throw creditError;
+    }
+
+    // Send WhatsApp notification
+    const { data: userData } = await supabase
+      .from('whatsapp_users')
+      .select('phone_number')
+      .eq('id', userId)
+      .single();
+
+    if (userData) {
+      await supabase.functions.invoke('whatsapp-send', {
+        body: {
+          message_type: 'text',
+          recipient: userData.phone_number,
+          content: {
+            text: `🎉 Your subscription credits (${creditsAmount}) have been added to your account.\n\nSend "balance" to check your new credit balance.`
+          }
+        }
+      });
+    }
+  }
+}
