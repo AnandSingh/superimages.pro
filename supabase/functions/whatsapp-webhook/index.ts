@@ -141,29 +141,6 @@ const modificationKeywords = [
   'but', 'and', 'with', 'without'
 ];
 
-const CREDITS_GUIDE = `Here are our credit packages:
-
-⭐️ Starter Pack: $9.99
-- 75 credits
-- Perfect for casual users
-
-🌟 Pro Pack: $19.99
-- 150 credits
-- Great value for regular users
-
-💫 Ultimate Pack: $49.99
-- 500 credits
-- Best value for power users
-
-Each image generation costs 1 credit.
-
-To purchase, just reply with:
-"buy starter" for Starter Pack
-"buy pro" for Pro Pack
-"buy ultimate" for Ultimate Pack
-
-Or type "balance" to check your current credits.`;
-
 async function generateImageWithReplicate(prompt: string) {
   const replicate = new Replicate({
     auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
