@@ -48,10 +48,11 @@ serve(async (req) => {
       .from('credit_products')
       .select('*')
       .eq('id', product_id)
+      .eq('is_active', true)
       .single();
 
     if (productError || !productData) {
-      throw new Error('Product not found');
+      throw new Error('Product not found or inactive');
     }
 
     console.log('Found product:', productData);
