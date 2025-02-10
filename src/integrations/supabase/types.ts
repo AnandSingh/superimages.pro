@@ -258,32 +258,41 @@ export type Database = {
       whatsapp_users: {
         Row: {
           created_at: string | null
+          email: string | null
           first_name: string | null
           id: string
           last_active: string | null
           last_image_context: Json | null
           last_interaction_type: string | null
           last_name: string | null
+          onboarding_completed: boolean | null
+          onboarding_state: string | null
           phone_number: string
         }
         Insert: {
           created_at?: string | null
+          email?: string | null
           first_name?: string | null
           id?: string
           last_active?: string | null
           last_image_context?: Json | null
           last_interaction_type?: string | null
           last_name?: string | null
+          onboarding_completed?: boolean | null
+          onboarding_state?: string | null
           phone_number: string
         }
         Update: {
           created_at?: string | null
+          email?: string | null
           first_name?: string | null
           id?: string
           last_active?: string | null
           last_image_context?: Json | null
           last_interaction_type?: string | null
           last_name?: string | null
+          onboarding_completed?: boolean | null
+          onboarding_state?: string | null
           phone_number?: string
         }
         Relationships: []
