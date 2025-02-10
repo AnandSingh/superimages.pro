@@ -8,6 +8,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Add these constant arrays at the top level, after the imports:
+const creditBalanceKeywords = [
+  'balance',
+  'credits',
+  'credit',
+  'how many credits',
+  'check credits',
+  'my credits',
+  'credit balance',
+  "what's my balance",
+  'remaining credits'
+];
+
+const buyCreditsKeywords = [
+  'buy credits',
+  'purchase credits',
+  'credit packages',
+  'credit prices',
+  'how much are credits',
+  'credit cost'
+];
+
 // Function to format conversation history
 async function getConversationHistory(supabase: any, userId: string, limit = 5) {
   const { data: messages, error } = await supabase
@@ -525,7 +547,7 @@ serve(async (req) => {
             const messageText = message.text.body.toLowerCase();
             
             // Check for credit-related commands with more specific conditions
-            if (messageText === 'balance' || messageText === 'credits' || messageText === 'credit') {
+            if (creditBalanceKeywords.some(keyword => messageText.includes(keyword))) {
               const creditsMessage = await getCreditsMessage(userContext.id);
               await sendWhatsAppMessage(sender.wa_id, creditsMessage);
               return new Response(JSON.stringify({ success: true }), {
@@ -533,7 +555,7 @@ serve(async (req) => {
               });
             }
 
-            if (messageText === 'buy credits' || messageText.includes('how much') || messageText.includes('credit package') || messageText.includes('credit price')) {
+            if (buyCreditsKeywords.some(keyword => messageText.includes(keyword))) {
               const creditsGuide = await getDynamicCreditsGuide(supabase);
               await sendWhatsAppMessage(sender.wa_id, creditsGuide);
               return new Response(JSON.stringify({ success: true }), {
