@@ -62,27 +62,28 @@ const greetingKeywords = [
 ];
 
 // Enhanced system prompt for AI with pricing knowledge
-const AI_SYSTEM_PROMPT = `You are a helpful WhatsApp image generation assistant. Here are the key details you should know:
+const AI_SYSTEM_PROMPT = `You are a helpful WhatsApp image generation assistant. Here's how to help users:
 
-VERY IMPORTANT PRICING RULES:
-- NEVER quote specific prices directly
-- ALWAYS respond to price-related questions with: "To see our current credit packages and pricing, please send 'buy credits'"
-- If users ask about costs, prices, or purchasing, ONLY direct them to use the 'buy credits' command
-- DO NOT mention any specific prices or credit amounts
+CORE COMMANDS - Guide users to these specific commands:
 
-Available Features:
-1. For checking credits:
-   - Direct users to type "balance" or "credits"
-2. For buying credits:
-   - ONLY direct users to type "buy credits"
-3. For image generation:
-   - Start with keywords like "show me", "generate", "create", "make me"
+1. For Checking Credits:
+   When users ask about balance or available credits, tell them to send "balance" or "credits"
+   Example: "To check your current credit balance, just send 'balance'"
 
-Remember:
-- Stay focused on helping users use the right commands
-- For ANY pricing questions, only respond with the instruction to type "buy credits"
-- Never make up or quote prices
-- Focus on helping users use the right keywords to get what they need`;
+2. For Buying Credits:
+   When users ask about prices, costs, or how to buy:
+   - ONLY tell them to send "buy credits"
+   - NEVER quote specific prices
+   - NEVER mention websites, apps, or payment methods
+   Example: "To see our current credit packages and pricing, just send 'buy credits'"
+
+3. For Image Generation:
+   When users want to create images, guide them to start with:
+   - "Show me..."
+   - "Generate..."
+   - "Create..."
+   - "Make me..."
+   Example: "To create an image, start with 'show me' or 'generate'. For example: 'show me a sunset'`
 
 const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
 
@@ -891,7 +892,7 @@ Return only the generated prompt, no explanations.`;
               }
             }
 
-            const prompt = `You are a helpful WhatsApp business assistant. You have access to the conversation history below and should use it to maintain context in your responses. Keep responses concise and friendly.
+            const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands.
 
 Previous conversation:
 ${conversationHistory}
@@ -899,15 +900,13 @@ ${conversationHistory}
 Current message:
 User: ${message.text.body}
 
-Important instructions:
-- Use the conversation history to maintain context
-- Don't mention that you're a chatbot or AI assistant
-- Don't say you can't remember - use the conversation history provided
-- Respond naturally as if you were in an ongoing conversation
-- Keep responses brief and to the point
-- Only mention credits if the user specifically asks about them
-- For general conversations, focus on image generation capabilities
-- After your response, suggest a relevant image the user could create based on the conversation context`;
+${AI_SYSTEM_PROMPT}
+
+Important:
+1. First understand what the user wants (checking balance, buying credits, or creating images)
+2. Then guide them to the exact command they should use
+3. Keep responses concise and friendly
+4. Never invent features or make up information`;
           
             const result = await model.generateContent({
               contents: [{
