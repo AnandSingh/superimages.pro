@@ -141,6 +141,29 @@ const modificationKeywords = [
   'but', 'and', 'with', 'without'
 ];
 
+const CREDITS_GUIDE = `Here are our credit packages:
+
+⭐️ Starter Pack: $9.99
+- 75 credits
+- Perfect for casual users
+
+🌟 Pro Pack: $19.99
+- 150 credits
+- Great value for regular users
+
+💫 Ultimate Pack: $49.99
+- 500 credits
+- Best value for power users
+
+Each image generation costs 1 credit.
+
+To purchase, just reply with:
+"buy starter" for Starter Pack
+"buy pro" for Pro Pack
+"buy ultimate" for Ultimate Pack
+
+Or type "balance" to check your current credits.`;
+
 async function generateImageWithReplicate(prompt: string) {
   const replicate = new Replicate({
     auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
@@ -496,6 +519,22 @@ serve(async (req) => {
             
             const messageText = message.text.body.toLowerCase();
             
+            // Check for credit-related commands
+            if (messageText === 'credits' || messageText === 'buy credits') {
+              await sendWhatsAppMessage(sender.wa_id, CREDITS_GUIDE);
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+
+            if (messageText === 'balance') {
+              const creditsMessage = await getCreditsMessage(userContext.id);
+              await sendWhatsAppMessage(sender.wa_id, creditsMessage);
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+
             // Check for initial greetings or help requests
             if (messageText === 'hi' || messageText === 'hello' || messageText === 'hey') {
               await sendWhatsAppMessage(sender.wa_id, INITIAL_GREETING);
