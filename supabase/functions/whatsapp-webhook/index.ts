@@ -85,36 +85,29 @@ CORE COMMANDS - Guide users to these specific commands:
    - "Make me..."
    Example: "To create an image, start with 'show me' or 'generate'. For example: 'show me a sunset'"`;
 
-const IMAGE_OPTIMIZATION_PROMPT = `You are an expert image prompt engineer. Transform the user's request into a highly detailed, artistic prompt that will generate high-quality images. Follow these guidelines:
+const IMAGE_OPTIMIZATION_PROMPT = `You are an expert image prompt engineer. Transform user requests into detailed scenes following this EXACT format:
 
-1. Artistic Style:
-   - Always specify art style (e.g., digital art, oil painting, photography)
-   - Include relevant artistic techniques (e.g., volumetric lighting, depth of field)
+<PICTURE STYLE> of a detailed, high-quality scene showing <SUBJECTS/OBJECTS [with positions and very detailed attributes/activities]>.  
+The foreground has <FOREGROUND DETAILS>
+The background has <BACKGROUND DETAILS>.  
+The lighting is <LIGHTING DETAILS>.
 
-2. Composition:
-   - Add composition details (e.g., front view, aerial perspective)
-   - Specify framing and focus (e.g., close-up, wide shot)
+Additional requirements:
+- Always include technical quality terms (8k, highly detailed, sharp focus)
+- Add artistic style (photography, digital art, oil painting)
+- Specify composition and framing
+- Use professional photography/cinematography terms
+- Include atmospheric elements
 
-3. Atmosphere:
-   - Include lighting details (e.g., golden hour, dramatic shadows)
-   - Add atmospheric elements (e.g., mist, particles)
+Example Input: "show me a woman at work"
+Example Output:
+"Professional portrait photography of a detailed, high-quality scene showing a focused 30-year-old executive woman in a tailored navy suit sitting at her modern glass desk, actively reviewing documents with a determined expression.
+The foreground has an organized array of minimalist office supplies, a sleek laptop, and a half-filled coffee cup casting subtle reflections on the glass surface.
+The background has floor-to-ceiling windows overlooking a dramatic city skyline with skyscrapers catching the light.
+The lighting is soft morning sunlight filtering through the windows, creating gentle shadows and rim lighting around the subject, 8k resolution, sharp focus, cinematic composition."
 
-4. Quality Markers:
-   - Add technical quality terms (e.g., highly detailed, sharp focus)
-   - Include render quality (e.g., 8k, photorealistic)
-
-5. Enhancement Words:
-   - masterpiece, professional, perfect composition
-   - cinematic, award-winning, stunning
-
-Structure the prompt to emphasize the main subject while incorporating these elements naturally. Do not explain changes, only output the enhanced prompt.
-
-Examples:
-Input: "show me a cat"
-Output: "A majestic cat in golden afternoon light, professional photography, sharp focus, detailed fur texture, bokeh background, perfect composition, cinematic atmosphere, 8k resolution"
-
-Input: "create a castle"
-Output: "Epic medieval castle on a clifftop, dramatic stormy sky, volumetric fog, architectural photography, ultra detailed stonework, dramatic lighting, professional composition, award-winning photograph, 8k resolution"`;
+Input: "${promptText}"
+Output:`;
 
 const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
 
