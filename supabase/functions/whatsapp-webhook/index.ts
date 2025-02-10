@@ -52,7 +52,6 @@ const greetingKeywords = [
 const AI_SYSTEM_PROMPT = `You are a helpful WhatsApp image generation assistant. Here are the key details you should know:
 
 Available Credit Packages:
-- Free Tier: 10 credits (Free)
 - Starter Tier: 75 credits ($3.99)
 - Pro Tier: 150 credits ($4.99)
 - Ultimate Tier: 500 credits ($9.99)
@@ -367,7 +366,8 @@ async function getCreditsMessage(userId: string): Promise<string> {
     .from('credit_products')
     .select('*')
     .eq('is_active', true)
-    .order('credits_amount', { ascending: true })
+    .gt('price', 0)  // Only get paid products
+    .order('price', { ascending: true })
     .limit(1);
 
   const balance = creditData?.balance || 0;
@@ -377,7 +377,7 @@ async function getCreditsMessage(userId: string): Promise<string> {
 
 Each image generation costs 1 credit.${balance === 0 ? `
 
-To purchase more credits, you can start with our ${cheapestProduct?.name} (${cheapestProduct?.credits_amount} credits) for $${(cheapestProduct?.price || 0) / 100}.` : ''}
+To purchase more credits, start with our ${cheapestProduct?.name} (${cheapestProduct?.credits_amount} credits) for $${(cheapestProduct?.price || 0) / 100}.` : ''}
 
 Send "buy credits" to see available packages.`;
 }
@@ -387,6 +387,7 @@ async function getDynamicCreditsGuide(supabase: any): Promise<string> {
     .from('credit_products')
     .select('*')
     .eq('is_active', true)
+    .gt('price', 0)  // Only get paid products
     .order('credits_amount', { ascending: true });
 
   if (error || !products?.length) {
