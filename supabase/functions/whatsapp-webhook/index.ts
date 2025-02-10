@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -566,18 +565,37 @@ serve(async (req) => {
               });
             }
             
-            // Check for credit-related commands with more specific conditions
-            if (creditBalanceKeywords.some(keyword => messageText.includes(keyword))) {
-              const creditsMessage = await getCreditsMessage(userContext.id);
-              await sendWhatsAppMessage(sender.wa_id, creditsMessage);
+            // Check for buy credits/packages first - needs to be more specific
+            if (
+              buyCreditsKeywords.some(keyword => 
+                messageText === keyword || // Exact match
+                messageText.startsWith(keyword + ' ') || // Starts with keyword
+                messageText === 'packages' || // Common variations
+                messageText === 'credit packages' ||
+                messageText === 'show packages' ||
+                messageText === 'show credit packages'
+              )
+            ) {
+              const creditsGuide = await getDynamicCreditsGuide(supabase);
+              await sendWhatsAppMessage(sender.wa_id, creditsGuide);
               return new Response(JSON.stringify({ success: true }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
             }
 
-            if (buyCreditsKeywords.some(keyword => messageText.includes(keyword))) {
-              const creditsGuide = await getDynamicCreditsGuide(supabase);
-              await sendWhatsAppMessage(sender.wa_id, creditsGuide);
+            // Then check for balance inquiries - make it more specific
+            if (
+              creditBalanceKeywords.some(keyword => 
+                messageText === keyword || // Exact match
+                messageText.startsWith(keyword + ' ') || // Starts with keyword
+                messageText === 'balance' || // Common variations
+                messageText === 'credits' ||
+                messageText === "what's my balance" ||
+                messageText === 'how many credits do i have'
+              )
+            ) {
+              const creditsMessage = await getCreditsMessage(userContext.id);
+              await sendWhatsAppMessage(sender.wa_id, creditsMessage);
               return new Response(JSON.stringify({ success: true }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
@@ -848,4 +866,3 @@ Important instructions:
     })
   }
 })
-
