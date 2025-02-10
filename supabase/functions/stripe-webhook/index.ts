@@ -56,15 +56,16 @@ serve(async (req) => {
         const invoice = event.data.object;
         console.log('Processing paid invoice:', invoice.id);
         
-        // Get customer phone number from invoice
-        const customerPhone = invoice.customer_phone;
+        // Get customer phone number from invoice and remove '+' prefix if present
+        const customerPhone = invoice.customer_phone?.replace(/^\+/, '');
         if (!customerPhone) {
           console.error('No customer phone number found in invoice');
-          // Log for monitoring but don't throw error
           return new Response(JSON.stringify({ received: true }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
+
+        console.log('Looking up user with phone number:', customerPhone);
 
         // Find user by phone number
         const { data: userData, error: userError } = await supabase
@@ -75,7 +76,6 @@ serve(async (req) => {
 
         if (userError) {
           console.error('Database error finding user:', userError);
-          // Log database error but acknowledge webhook
           return new Response(JSON.stringify({ received: true }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -83,7 +83,6 @@ serve(async (req) => {
 
         if (!userData) {
           console.error(`No user found with phone number ${customerPhone}. Payment will need manual reconciliation.`);
-          // Log for manual reconciliation but acknowledge webhook
           return new Response(JSON.stringify({ received: true }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -141,7 +140,6 @@ serve(async (req) => {
 
             if (creditError) {
               console.error('Error adding credits:', creditError);
-              // Log credit error but acknowledge webhook
               return new Response(JSON.stringify({ received: true }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
               });
@@ -169,7 +167,6 @@ serve(async (req) => {
           }
         } catch (processingError) {
           console.error('Error processing payment details:', processingError);
-          // Log processing error but acknowledge webhook
           return new Response(JSON.stringify({ received: true }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
