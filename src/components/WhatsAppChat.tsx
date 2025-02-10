@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Send } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PaymentModal from "./PaymentModal";
 
 const WhatsAppChat = () => {
   const [recipient, setRecipient] = useState("");
@@ -14,6 +15,7 @@ const WhatsAppChat = () => {
   const [pin, setPin] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const { toast } = useToast();
 
   const handleSend = async () => {
@@ -28,6 +30,13 @@ const WhatsAppChat = () => {
 
     setIsSending(true);
     try {
+      // Check if the message is a command to buy credits
+      if (message.toLowerCase() === "buy credits") {
+        setShowPaymentModal(true);
+        setMessage("");
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke('whatsapp-send', {
         body: {
           message_type: 'text',
@@ -117,7 +126,7 @@ const WhatsAppChat = () => {
             
             <div className="flex gap-2">
               <Input
-                placeholder="Type your message..."
+                placeholder="Type your message... (type 'buy credits' to purchase)"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={(e) => {
@@ -164,6 +173,12 @@ const WhatsAppChat = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      <PaymentModal 
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        phoneNumber={recipient}
+      />
     </div>
   );
 };
