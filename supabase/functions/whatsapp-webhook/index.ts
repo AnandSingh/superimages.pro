@@ -610,6 +610,18 @@ serve(async (req) => {
                 promptText = `${modification} (maintaining style and context from previous image: ${previousPrompt})`;
               }
 
+              // Check and deduct credits before proceeding
+              const hasCredits = await checkAndDeductCredits(userContext.id);
+              if (!hasCredits) {
+                await sendWhatsAppMessage(
+                  sender.wa_id,
+                  "You don't have enough credits to generate an image. Send 'credits' to see available packages or 'balance' to check your current credits."
+                );
+                return new Response(JSON.stringify({ success: true }), {
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+              }
+
               const promptOptimizationPrompt = `
 You are an expert artist using the FLUX image generation model. Your task is to take user requests and create detailed, high-quality prompts that follow this exact structure:
 
@@ -699,9 +711,23 @@ Return only the generated prompt, no explanations.`;
                 }
               } catch (error) {
                 console.error('Error generating or sending image:', error);
+                // Since image generation failed, let's refund the credit
+                const supabase = createClient(
+                  Deno.env.get('SUPABASE_URL') ?? '',
+                  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+                );
+                
+                await supabase.rpc('add_user_credits', {
+                  p_user_id: userContext.id,
+                  p_amount: 1,
+                  p_transaction_type: 'refund',
+                  p_product_type: 'image_generation',
+                  p_metadata: { reason: 'generation_failed' }
+                });
+                
                 await sendWhatsAppMessage(
                   sender.wa_id,
-                  helpfulImageRequestGuide
+                  "I apologize, but I encountered an error while generating your image. Your credit has been refunded. Please try again."
                 );
               }
 
