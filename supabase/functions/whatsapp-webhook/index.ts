@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
 import Replicate from "https://esm.sh/replicate@0.25.2"
+import Stripe from "https://esm.sh/stripe@10.17.0"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -530,6 +531,58 @@ async function handleOnboarding(supabase: any, userId: string, userMessage: stri
   return null;
 }
 
+async function handleBuyCommand(
+  supabase: any,
+  message: string,
+  userId: string,
+  phoneNumber: string
+): Promise<string | null> {
+  const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
+    apiVersion: '2023-10-16',
+    httpClient: Stripe.createFetchHttpClient(),
+  });
+
+  try {
+    const prices = await stripe.prices.list({
+      active: true,
+      expand: ['data.product']
+    });
+
+    const command = message.toLowerCase();
+    const matchingPrice = prices.data.find(price => 
+      price.product && 
+      typeof price.product !== 'string' && 
+      command === `buy ${price.product.name.toLowerCase()}`
+    );
+
+    if (matchingPrice) {
+      const baseUrl = Deno.env.get('PUBLIC_APP_URL') || 'http://localhost:5173';
+      const session = await createStripeCheckoutSession(
+        userId,
+        phoneNumber,
+        matchingPrice.id,
+        `${baseUrl}/payment-success`,
+        `${baseUrl}/payment-cancelled`
+      );
+
+      if (!session.url) {
+        throw new Error('Failed to create checkout session');
+      }
+
+      return `Great choice! Click this link to complete your purchase:
+
+${session.url}
+
+The link will expire in 24 hours.`;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error processing buy command:', error);
+    return 'Sorry, there was an error processing your request. Please try again later.';
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -639,7 +692,6 @@ serve(async (req) => {
           if (onboardingResponse) {
             await sendWhatsAppMessage(sender.wa_id, onboardingResponse);
             
-            // If onboarding was just completed, get fresh user data
             if (onboardingResponse === EMAIL_CONFIRMATION_MESSAGE) {
               const { data: freshUserData, error: freshUserError } = await supabase
                 .from('whatsapp_users')
@@ -660,12 +712,21 @@ serve(async (req) => {
             }
           }
 
-          // Check for greetings first
-          if (greetingKeywords.some(keyword => messageText.startsWith(keyword))) {
-            await sendWhatsAppMessage(sender.wa_id, INITIAL_GREETING);
-            return new Response(JSON.stringify({ success: true }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
+          // First check for buy commands
+          if (messageText.startsWith('buy ')) {
+            const buyResponse = await handleBuyCommand(
+              supabase,
+              messageText,
+              currentUserData.id,
+              sender.wa_id
+            );
+            
+            if (buyResponse) {
+              await sendWhatsAppMessage(sender.wa_id, buyResponse);
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
           }
 
           // First check for direct image generation requests
