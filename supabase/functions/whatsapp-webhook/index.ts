@@ -389,33 +389,27 @@ To purchase more credits, start with our ${cheapestProduct?.name} (${cheapestPro
 Send "buy credits" to see available packages.`;
 }
 
-async function getDynamicCreditsGuide(supabase: any): Promise<string> {
-  const { data: products, error } = await supabase
-    .from('credit_products')
-    .select('*')
-    .eq('is_active', true)
-    .gt('price', 0)  // Only get paid products
-    .order('credits_amount', { ascending: true });
+async function getDynamicCreditsGuide(): Promise<string> {
+  return `🎨 Image Generation Subscriptions:
 
-  if (error || !products?.length) {
-    return 'Credit packages are currently unavailable. Please try again later.';
-  }
+🎈 Basic Package
+• 75 credits monthly
+• $3.99/month
+• https://buy.stripe.com/aEU4jM9WEeN58pi7ss
 
-  const packagesText = products.map(product => 
-    `${product.name}: $${(product.price / 100).toFixed(2)}
-- ${product.credits_amount} credits`
-  ).join('\n\n');
+🚀 Pro Package
+• 150 credits monthly
+• $5.99/month
+• https://buy.stripe.com/28o8A28SA20jbBu8wy
 
-  return `Here are our credit packages:
+💎 Ultimate Package
+• 500 credits monthly
+• $9.99/month
+• https://buy.stripe.com/5kAcQi3ygfR934Y3cf
 
-${packagesText}
+Click any link above to subscribe. Your credits will renew automatically each month!
 
-Each image generation costs 1 credit.
-
-To purchase, just reply with:
-${products.map(p => `"buy ${p.name.toLowerCase()}" for ${p.name}`).join('\n')}
-
-Or type "balance" to check your current credits.`;
+Type "balance" to check your current credits.`;
 }
 
 async function getConversationHistory(supabase: any, userId: string): Promise<string> {
@@ -820,7 +814,7 @@ Return only the generated prompt, no explanations.`;
 
           // Finally check for buy credits command
           if (messageText === 'buy credits') {
-            const creditsGuide = await getDynamicCreditsGuide(supabase);
+            const creditsGuide = await getDynamicCreditsGuide();
             await sendWhatsAppMessage(sender.wa_id, creditsGuide);
             return new Response(JSON.stringify({ success: true }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
