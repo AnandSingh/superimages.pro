@@ -667,55 +667,8 @@ serve(async (req) => {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
-          
-          // Check for pricing-related queries
-          const isPriceRelatedQuery = messageText.includes('price') || 
-            messageText.includes('cost') || 
-            messageText.includes('how much') || 
-            messageText.includes('pricing') ||
-            messageText.includes('package') ||
-            messageText.includes('fee') ||
-            messageText.includes('rate');
 
-          // Check for buy credits/packages first
-          if (
-            buyCreditsKeywords.some(keyword => 
-              messageText === keyword || 
-              messageText.startsWith(keyword + ' ') || 
-              messageText === 'packages' || 
-              messageText === 'credit packages' ||
-              messageText === 'show packages' ||
-              messageText === 'show credit packages'
-            ) || isPriceRelatedQuery
-          ) {
-            const creditsGuide = await getDynamicCreditsGuide(supabase);
-            await sendWhatsAppMessage(sender.wa_id, creditsGuide);
-            return new Response(JSON.stringify({ success: true }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          }
-
-          // Check for balance inquiries
-          if (
-            creditBalanceKeywords.some(keyword => 
-              messageText === keyword || 
-              messageText.startsWith(keyword + ' ') || 
-              messageText === 'balance' || 
-              messageText === 'credits' ||
-              messageText === "what's my balance" ||
-              messageText === 'how many credits do i have'
-            )
-          ) {
-            const creditsMessage = await getCreditsMessage(currentUserData.id);
-            await sendWhatsAppMessage(sender.wa_id, creditsMessage);
-            return new Response(JSON.stringify({ success: true }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
-          }
-
-          const conversationHistory = await getConversationHistory(supabase, currentUserData.id);
-          console.log('Retrieved conversation history:', conversationHistory);
-          
+          // First check for direct image generation requests
           const isDirectImageRequest = imageKeywords.some(keyword => 
             messageText.includes(keyword)
           );
@@ -727,13 +680,6 @@ serve(async (req) => {
             messageText.startsWith('but') ||
             messageText.startsWith('and')
           );
-
-          console.log('Message analysis:', {
-            isDirectImageRequest,
-            isImageContext,
-            isModificationRequest,
-            userContext: currentUserData
-          });
 
           if (isDirectImageRequest || isModificationRequest) {
             let promptText = message.text.body;
@@ -763,27 +709,7 @@ serve(async (req) => {
               });
             }
 
-            const promptOptimizationPrompt = `
-You are an expert artist using the FLUX image generation model. Your task is to take user requests and create detailed, high-quality prompts that follow this exact structure:
-
-<PICTURE STYLE> of a detailed, high-quality scene showing <SUBJECTS/OBJECTS with detailed attributes/positions/activities>. The background has <BACKGROUND DETAILS>. The lighting is <LIGHTING DETAILS>.
-
-Guidelines:
-- For simple requests (e.g., "show me a cat"), flesh out all details imaginatively
-- For detailed requests, maintain all user-specified details while enhancing them
-- Always specify lighting and background, even if user doesn't mention them
-- Keep the exact three-part structure: style, scene description, lighting
-- Focus on visual details, positions, and atmosphere
-
-Example transformations:
-
-Simple request:
-User: "show me a cat"
-Output: "Realistic photography of a detailed, high-quality scene showing an elegant Siamese cat perched gracefully on a vintage windowsill, its blue eyes reflecting curiosity. The background has soft-focused indoor elements with warm, morning sunlight filtering through sheer curtains. The lighting is gentle and natural, creating subtle shadows that accentuate the cat's features."
-
-Detailed request:
-User: "A woman with wavy dark brown hair, wearing an off-shoulder sweater"
-Output: "Professional portrait photography of a detailed, high-quality scene showing a woman with flowing wavy dark brown hair cascading past her shoulders, wearing a cozy off-shoulder brown knit sweater that creates elegant draping effects. The background has a subtle gradient of warm earth tones with artistic bokeh effects. The lighting is soft and diffused, creating gentle highlights in her hair and natural skin tones."
+            const promptOptimizationPrompt = `${AI_SYSTEM_PROMPT}
 
 Current request to transform: "${promptText}"
 
@@ -876,23 +802,51 @@ Return only the generated prompt, no explanations.`;
             return new Response(JSON.stringify({ success: true }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
-          } else {
-            if (currentUserData.last_interaction_type === 'image_generation') {
-              const { error: contextError } = await supabase
-                .from('whatsapp_users')
-                .update({
-                  last_interaction_type: 'conversation',
-                  last_image_context: null
-                })
-                .eq('id', currentUserData.id);
+          }
+          
+          // After image generation, check for credit balance queries
+          if (creditBalanceKeywords.some(keyword => 
+            messageText === keyword || 
+            messageText.startsWith(keyword + ' ') || 
+            messageText === 'balance' || 
+            messageText === 'credits'
+          )) {
+            const creditsMessage = await getCreditsMessage(currentUserData.id);
+            await sendWhatsAppMessage(sender.wa_id, creditsMessage);
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
 
-              if (contextError) {
-                console.error('Error updating user context:', contextError);
-                throw contextError;
-              }
+          // Finally check for buy credits command
+          if (messageText === 'buy credits') {
+            const creditsGuide = await getDynamicCreditsGuide(supabase);
+            await sendWhatsAppMessage(sender.wa_id, creditsGuide);
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          // Normal conversation handling
+          const conversationHistory = await getConversationHistory(supabase, currentUserData.id);
+          console.log('Retrieved conversation history:', conversationHistory);
+          
+          if (currentUserData.last_interaction_type === 'image_generation') {
+            const { error: contextError } = await supabase
+              .from('whatsapp_users')
+              .update({
+                last_interaction_type: 'conversation',
+                last_image_context: null
+              })
+              .eq('id', currentUserData.id);
+
+            if (contextError) {
+              console.error('Error updating user context:', contextError);
+              throw contextError;
             }
+          }
 
-            const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands.
+          const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands.
 
 Previous conversation:
 ${conversationHistory}
@@ -908,44 +862,43 @@ Important:
 3. Keep responses concise and friendly
 4. Never invent features or make up information`;
           
-            const result = await model.generateContent({
-              contents: [{
-                parts: [{ text: prompt }]
-              }]
-            });
-            
-            const response = await result.response;
-            const aiResponse = response.text();
-            
-            console.log('AI generated response:', aiResponse);
+          const result = await model.generateContent({
+            contents: [{
+              parts: [{ text: prompt }]
+            }]
+          });
+          
+          const response = await result.response;
+          const aiResponse = response.text();
+          
+          console.log('AI generated response:', aiResponse);
 
-            // Send the AI response
-            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse);
-            
-            // After any regular conversation, send the image guide
-            await sendWhatsAppMessage(
-              sender.wa_id,
-              "By the way, I can create images too! Try saying:\n\"Show me a sunset over mountains\"\nor\n\"Generate a magical forest\""
-            );
-            
-            const aiMessageData = {
-              whatsapp_message_id: whatsappResponse.messages[0].id,
-              user_id: currentUserData.id,
-              direction: 'outgoing',
-              message_type: 'text',
-              content: { text: aiResponse },
-              status: 'sent',
-              created_at: new Date().toISOString()
-            }
+          // Send the AI response
+          const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse);
+          
+          // After any regular conversation, send the image guide
+          await sendWhatsAppMessage(
+            sender.wa_id,
+            "By the way, I can create images too! Try saying:\n\"Show me a sunset over mountains\"\nor\n\"Generate a magical forest\""
+          );
+          
+          const aiMessageData = {
+            whatsapp_message_id: whatsappResponse.messages[0].id,
+            user_id: currentUserData.id,
+            direction: 'outgoing',
+            message_type: 'text',
+            content: { text: aiResponse },
+            status: 'sent',
+            created_at: new Date().toISOString()
+          }
 
-            const { error: aiMessageError } = await supabase
-              .from('messages')
-              .insert(aiMessageData)
+          const { error: aiMessageError } = await supabase
+            .from('messages')
+            .insert(aiMessageData)
 
-            if (aiMessageError) {
-              console.error('Error storing AI message:', aiMessageError)
-              throw aiMessageError
-            }
+          if (aiMessageError) {
+            console.error('Error storing AI message:', aiMessageError)
+            throw aiMessageError
           }
         }
       }
