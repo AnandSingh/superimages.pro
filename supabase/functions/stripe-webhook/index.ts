@@ -60,7 +60,10 @@ serve(async (req) => {
         const customerPhone = invoice.customer_phone;
         if (!customerPhone) {
           console.error('No customer phone number found in invoice');
-          throw new Error('No customer phone number found in invoice');
+          // Log for monitoring but don't throw error
+          return new Response(JSON.stringify({ received: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
 
         // Find user by phone number
@@ -68,11 +71,22 @@ serve(async (req) => {
           .from('whatsapp_users')
           .select('id, phone_number')
           .eq('phone_number', customerPhone)
-          .single();
+          .maybeSingle();
 
-        if (userError || !userData) {
-          console.error('Error finding user by phone number:', userError || 'No user found');
-          throw new Error(`No user found with phone number ${customerPhone}`);
+        if (userError) {
+          console.error('Database error finding user:', userError);
+          // Log database error but acknowledge webhook
+          return new Response(JSON.stringify({ received: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (!userData) {
+          console.error(`No user found with phone number ${customerPhone}. Payment will need manual reconciliation.`);
+          // Log for manual reconciliation but acknowledge webhook
+          return new Response(JSON.stringify({ received: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
 
         // Get subscription and product details
@@ -83,65 +97,81 @@ serve(async (req) => {
         let creditsAmount = 0;
         let productId = '';
 
-        if (subscription) {
-          // For subscription payments
-          const items = subscription.items.data[0];
-          const price = await stripe.prices.retrieve(items.price.id);
-          const product = await stripe.products.retrieve(price.product);
-          
-          creditsAmount = subscription.metadata.credits_amount 
-            ? parseInt(subscription.metadata.credits_amount) 
-            : (product.metadata.credits_amount 
+        try {
+          if (subscription) {
+            // For subscription payments
+            const items = subscription.items.data[0];
+            const price = await stripe.prices.retrieve(items.price.id);
+            const product = await stripe.products.retrieve(price.product);
+            
+            creditsAmount = subscription.metadata.credits_amount 
+              ? parseInt(subscription.metadata.credits_amount) 
+              : (product.metadata.credits_amount 
+                ? parseInt(product.metadata.credits_amount) 
+                : 0);
+            productId = product.id;
+          } else {
+            // For one-time payments
+            const lineItem = invoice.lines.data[0];
+            const price = await stripe.prices.retrieve(lineItem.price.id);
+            const product = await stripe.products.retrieve(price.product);
+            
+            creditsAmount = product.metadata.credits_amount 
               ? parseInt(product.metadata.credits_amount) 
-              : 0);
-          productId = product.id;
-        } else {
-          // For one-time payments
-          const lineItem = invoice.lines.data[0];
-          const price = await stripe.prices.retrieve(lineItem.price.id);
-          const product = await stripe.products.retrieve(price.product);
-          
-          creditsAmount = product.metadata.credits_amount 
-            ? parseInt(product.metadata.credits_amount) 
-            : 0;
-          productId = product.id;
-        }
-
-        if (creditsAmount > 0) {
-          // Add credits to user
-          const { error: creditError } = await supabase.rpc(
-            'add_user_credits',
-            {
-              p_user_id: userData.id,
-              p_amount: creditsAmount,
-              p_transaction_type: 'purchase',
-              p_product_type: 'image_generation',
-              p_metadata: {
-                invoice_id: invoice.id,
-                subscription_id: subscription?.id,
-                product_id: productId,
-              },
-            }
-          );
-
-          if (creditError) {
-            console.error('Error adding credits:', creditError);
-            throw creditError;
+              : 0;
+            productId = product.id;
           }
 
-          // Send WhatsApp notification
-          const message = subscription
-            ? `🎉 Your subscription credits (${creditsAmount}) have been added to your account.\n\nSend "balance" to check your new credit balance.`
-            : `🎉 Payment successful! ${creditsAmount} credits have been added to your account.\n\nSend "balance" to check your new credit balance.`;
-
-          await supabase.functions.invoke('whatsapp-send', {
-            body: {
-              message_type: 'text',
-              recipient: customerPhone,
-              content: {
-                text: message
+          if (creditsAmount > 0) {
+            // Add credits to user
+            const { error: creditError } = await supabase.rpc(
+              'add_user_credits',
+              {
+                p_user_id: userData.id,
+                p_amount: creditsAmount,
+                p_transaction_type: 'purchase',
+                p_product_type: 'image_generation',
+                p_metadata: {
+                  invoice_id: invoice.id,
+                  subscription_id: subscription?.id,
+                  product_id: productId,
+                },
               }
+            );
+
+            if (creditError) {
+              console.error('Error adding credits:', creditError);
+              // Log credit error but acknowledge webhook
+              return new Response(JSON.stringify({ received: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
             }
+
+            // Send WhatsApp notification
+            try {
+              const message = subscription
+                ? `🎉 Your subscription credits (${creditsAmount}) have been added to your account.\n\nSend "balance" to check your new credit balance.`
+                : `🎉 Payment successful! ${creditsAmount} credits have been added to your account.\n\nSend "balance" to check your new credit balance.`;
+
+              await supabase.functions.invoke('whatsapp-send', {
+                body: {
+                  message_type: 'text',
+                  recipient: customerPhone,
+                  content: {
+                    text: message
+                  }
+                }
+              });
+            } catch (notificationError) {
+              console.error('Error sending WhatsApp notification:', notificationError);
+              // Continue processing - notification failure shouldn't affect webhook response
+            }
+          }
+        } catch (processingError) {
+          console.error('Error processing payment details:', processingError);
+          // Log processing error but acknowledge webhook
+          return new Response(JSON.stringify({ received: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
         break;
@@ -167,6 +197,7 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error('Error processing webhook:', error);
+    // Only return 400 for webhook processing errors (signature, parsing)
     return new Response(
       JSON.stringify({ error: error.message }),
       {
