@@ -36,7 +36,8 @@ serve(async (req) => {
     let event;
 
     try {
-      event = stripe.webhooks.constructEvent(
+      // Changed from constructEvent to constructEventAsync
+      event = await stripe.webhooks.constructEventAsync(
         body,
         signature,
         webhookSecret
