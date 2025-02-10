@@ -2,11 +2,10 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/components/ui/use-toast";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { supabase } from "@/integrations/supabase/client";
-import { CreditPackageSelector } from "./CreditPackageSelector";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
@@ -74,60 +73,46 @@ const PaymentForm = ({ phoneNumber, onClose }: { phoneNumber: string; onClose: (
 };
 
 const PaymentModal = ({ isOpen, onClose, phoneNumber }: PaymentModalProps) => {
-  const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
 
-  const handlePackageSelect = async (packageId: string) => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('stripe-create-payment', {
-        body: {
-          phone_number: phoneNumber,
-          product_id: packageId,
-        },
-      });
+  useEffect(() => {
+    const initializePayment = async () => {
+      if (!isOpen || !phoneNumber) return;
 
-      if (error) throw error;
-      setClientSecret(data.clientSecret);
-      setSelectedPackage(packageId);
-    } catch (error) {
-      console.error('Error initializing payment:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to initialize payment",
-      });
-      onClose();
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      try {
+        const { data, error } = await supabase.functions.invoke('stripe-create-payment', {
+          body: {
+            phone_number: phoneNumber,
+            product_id: '10-credits-package', // You might want to make this dynamic
+          },
+        });
 
-  const handleClose = () => {
-    setSelectedPackage(null);
-    setClientSecret(null);
-    onClose();
-  };
+        if (error) throw error;
+        setClientSecret(data.clientSecret);
+      } catch (error) {
+        console.error('Error initializing payment:', error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to initialize payment",
+        });
+        onClose();
+      }
+    };
+
+    initializePayment();
+  }, [isOpen, phoneNumber]);
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {clientSecret ? "Complete Payment" : "Select Credit Package"}
-          </DialogTitle>
+          <DialogTitle>Purchase Credits</DialogTitle>
         </DialogHeader>
-        
-        {!clientSecret ? (
-          <CreditPackageSelector 
-            onSelect={handlePackageSelect}
-            isLoading={isLoading}
-          />
-        ) : (
+        {clientSecret && (
           <Elements stripe={stripePromise} options={{ clientSecret }}>
-            <PaymentForm phoneNumber={phoneNumber} onClose={handleClose} />
+            <PaymentForm phoneNumber={phoneNumber} onClose={onClose} />
           </Elements>
         )}
       </DialogContent>

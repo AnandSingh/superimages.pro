@@ -41,7 +41,6 @@ export type Database = {
           created_at: string | null
           credits_amount: number
           currency: string
-          description: string | null
           id: string
           is_active: boolean | null
           metadata: Json | null
@@ -53,7 +52,6 @@ export type Database = {
           created_at?: string | null
           credits_amount: number
           currency?: string
-          description?: string | null
           id?: string
           is_active?: boolean | null
           metadata?: Json | null
@@ -65,7 +63,6 @@ export type Database = {
           created_at?: string | null
           credits_amount?: number
           currency?: string
-          description?: string | null
           id?: string
           is_active?: boolean | null
           metadata?: Json | null
@@ -395,7 +392,6 @@ export type Database = {
       }
     }
     Enums: {
-      currency: "usd"
       expense_category:
         | "groceries"
         | "restaurant"
