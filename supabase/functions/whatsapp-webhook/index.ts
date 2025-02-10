@@ -416,24 +416,28 @@ Send "buy credits" to see available packages.`;
 }
 
 async function getDynamicCreditsGuide(): Promise<string> {
-  return `🎨 Image Generation Subscriptions:
+  return `🎨 Superb Tools Subscriptions [50% Off for a limited time only!}
 
 🎈 Basic Package
-• 75 credits monthly
+• 75 credits monthly (75 images)
 • $3.99/month
-• https://buy.stripe.com/aEU4jM9WEeN58pi7ss
+https://buy.stripe.com/aEU4jM9WEeN58pi7ss
 
 🚀 Pro Package
-• 150 credits monthly
+• 150 credits monthly (150 images)
 • $5.99/month
-• https://buy.stripe.com/28o8A28SA20jbBu8wy
+https://buy.stripe.com/28o8A28SA20jbBu8wy
 
 💎 Ultimate Package
-• 500 credits monthly
+• 500 credits monthly ($500 images)
 • $9.99/month
-• https://buy.stripe.com/5kAcQi3ygfR934Y3cf
+https://buy.stripe.com/5kAcQi3ygfR934Y3cf
 
-Click any link above to subscribe. Your credits will renew automatically each month!
+Click any link above to subscribe and your credits will be added automatically!
+
+By the way, these credits can be used across ALL our Superb products! (We'll be adding more and more tools weekly!)
+
+By the way make sure to use your correct Whatsapp number when checking out.
 
 Type "balance" to check your current credits.`;
 }
