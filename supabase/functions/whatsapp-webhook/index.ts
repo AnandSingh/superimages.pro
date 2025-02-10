@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -28,6 +29,17 @@ const buyCreditsKeywords = [
   'credit prices',
   'how much are credits',
   'credit cost'
+];
+
+const greetingKeywords = [
+  'hi',
+  'hello',
+  'hey',
+  'hola',
+  'greetings',
+  'good morning',
+  'good afternoon',
+  'good evening'
 ];
 
 // Function to format conversation history
@@ -545,6 +557,14 @@ serve(async (req) => {
             console.log('Processing message:', message.text.body);
             
             const messageText = message.text.body.toLowerCase();
+
+            // Check for greetings first
+            if (greetingKeywords.some(keyword => messageText.startsWith(keyword))) {
+              await sendWhatsAppMessage(sender.wa_id, INITIAL_GREETING);
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
             
             // Check for credit-related commands with more specific conditions
             if (creditBalanceKeywords.some(keyword => messageText.includes(keyword))) {
@@ -745,7 +765,9 @@ Important instructions:
 - Don't say you can't remember - use the conversation history provided
 - Respond naturally as if you were in an ongoing conversation
 - Keep responses brief and to the point
-- After your response, always remind the user about image generation capabilities with a relevant example based on the context of the conversation`;
+- Only mention credits if the user specifically asks about them
+- For general conversations, focus on image generation capabilities
+- After your response, suggest a relevant image the user could create based on the conversation context`;
               
               const result = await model.generateContent({
                 contents: [{
@@ -826,3 +848,4 @@ Important instructions:
     })
   }
 })
+
