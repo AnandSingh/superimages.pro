@@ -34,7 +34,20 @@ const buyCreditsKeywords = [
   'pricing',
   'cost',
   'package price',
-  'tier price'
+  'tier price',
+  'how much does it cost',
+  'what are your prices',
+  'what do credits cost',
+  'credit pricing',
+  'price list',
+  'price of credits',
+  'credit rates',
+  'rates',
+  'fees',
+  'cost of credits',
+  'price per credit',
+  'credit fee',
+  'what is the cost'
 ];
 
 const greetingKeywords = [
@@ -51,32 +64,25 @@ const greetingKeywords = [
 // Enhanced system prompt for AI with pricing knowledge
 const AI_SYSTEM_PROMPT = `You are a helpful WhatsApp image generation assistant. Here are the key details you should know:
 
-Available Credit Packages:
-- Starter Tier: 75 credits ($3.99)
-- Pro Tier: 150 credits ($4.99)
-- Ultimate Tier: 500 credits ($9.99)
+VERY IMPORTANT PRICING RULES:
+- NEVER quote specific prices directly
+- ALWAYS respond to price-related questions with: "To see our current credit packages and pricing, please send 'buy credits'"
+- If users ask about costs, prices, or purchasing, ONLY direct them to use the 'buy credits' command
+- DO NOT mention any specific prices or credit amounts
 
-Important Keywords:
+Available Features:
 1. For checking credits:
-   - Use "balance" or "credits" to check your current balance
-   - Example: "What's my balance?" or "How many credits do I have?"
-
+   - Direct users to type "balance" or "credits"
 2. For buying credits:
-   - Use "buy credits" to see all available packages
-   - Example: "I want to buy credits" or "Show me the packages"
-
+   - ONLY direct users to type "buy credits"
 3. For image generation:
    - Start with keywords like "show me", "generate", "create", "make me"
-   - Example: "Show me a sunset" or "Generate a fantasy castle"
 
-Guidelines:
-- If users ask about prices or packages, always direct them to use "buy credits" to see accurate, up-to-date pricing
-- If users ask about their balance, direct them to use "balance" or "credits"
-- For any image-related requests, remind them to use generation keywords
-- Never make up or quote specific prices - always direct users to use "buy credits" command
-- Focus on helping users use the right keywords to get what they need
-
-Remember to be concise but helpful in your responses.`;
+Remember:
+- Stay focused on helping users use the right commands
+- For ANY pricing questions, only respond with the instruction to type "buy credits"
+- Never make up or quote prices
+- Focus on helping users use the right keywords to get what they need`;
 
 const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
 
@@ -661,6 +667,15 @@ serve(async (req) => {
             });
           }
           
+          // Check for pricing-related queries
+          const isPriceRelatedQuery = messageText.includes('price') || 
+            messageText.includes('cost') || 
+            messageText.includes('how much') || 
+            messageText.includes('pricing') ||
+            messageText.includes('package') ||
+            messageText.includes('fee') ||
+            messageText.includes('rate');
+
           // Check for buy credits/packages first
           if (
             buyCreditsKeywords.some(keyword => 
@@ -670,7 +685,7 @@ serve(async (req) => {
               messageText === 'credit packages' ||
               messageText === 'show packages' ||
               messageText === 'show credit packages'
-            )
+            ) || isPriceRelatedQuery
           ) {
             const creditsGuide = await getDynamicCreditsGuide(supabase);
             await sendWhatsAppMessage(sender.wa_id, creditsGuide);
