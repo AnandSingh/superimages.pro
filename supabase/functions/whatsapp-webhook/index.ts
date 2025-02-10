@@ -524,16 +524,8 @@ serve(async (req) => {
             
             const messageText = message.text.body.toLowerCase();
             
-            // Check for credit-related commands
-            if (messageText === 'credits' || messageText === 'buy credits') {
-              const creditsGuide = await getDynamicCreditsGuide(supabase);
-              await sendWhatsAppMessage(sender.wa_id, creditsGuide);
-              return new Response(JSON.stringify({ success: true }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-              });
-            }
-
-            if (messageText === 'balance') {
+            // Check for credit-related commands with more specific conditions
+            if (messageText === 'balance' || messageText === 'credits' || messageText === 'credit') {
               const creditsMessage = await getCreditsMessage(userContext.id);
               await sendWhatsAppMessage(sender.wa_id, creditsMessage);
               return new Response(JSON.stringify({ success: true }), {
@@ -541,21 +533,14 @@ serve(async (req) => {
               });
             }
 
-            // Check for initial greetings or help requests
-            if (messageText === 'hi' || messageText === 'hello' || messageText === 'hey') {
-              await sendWhatsAppMessage(sender.wa_id, INITIAL_GREETING);
+            if (messageText === 'buy credits' || messageText.includes('how much') || messageText.includes('credit package') || messageText.includes('credit price')) {
+              const creditsGuide = await getDynamicCreditsGuide(supabase);
+              await sendWhatsAppMessage(sender.wa_id, creditsGuide);
               return new Response(JSON.stringify({ success: true }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
             }
 
-            if (messageText.includes('how') && (messageText.includes('work') || messageText.includes('use'))) {
-              await sendWhatsAppMessage(sender.wa_id, HOW_IT_WORKS_GUIDE);
-              return new Response(JSON.stringify({ success: true }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-              });
-            }
-            
             const conversationHistory = await getConversationHistory(supabase, userContext.id);
             console.log('Retrieved conversation history:', conversationHistory);
             
