@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Add these constant arrays at the top level, after the imports:
+// Updated keyword arrays for better detection
 const creditBalanceKeywords = [
   'balance',
   'credits',
@@ -27,7 +27,14 @@ const buyCreditsKeywords = [
   'credit packages',
   'credit prices',
   'how much are credits',
-  'credit cost'
+  'credit cost',
+  'how much is',
+  'what is the price',
+  'what are the prices',
+  'pricing',
+  'cost',
+  'package price',
+  'tier price'
 ];
 
 const greetingKeywords = [
@@ -41,51 +48,36 @@ const greetingKeywords = [
   'good evening'
 ];
 
-// Function to format conversation history
-async function getConversationHistory(supabase: any, userId: string, limit = 5) {
-  const { data: messages, error } = await supabase
-    .from('messages')
-    .select('direction, content, message_type, created_at')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+// Enhanced system prompt for AI with pricing knowledge
+const AI_SYSTEM_PROMPT = `You are a helpful WhatsApp image generation assistant. Here are the key details you should know:
 
-  if (error) {
-    console.error('Error fetching conversation history:', error);
-    return '';
-  }
+Available Credit Packages:
+- Free Tier: 10 credits (Free)
+- Starter Tier: 75 credits ($3.99)
+- Pro Tier: 150 credits ($4.99)
+- Ultimate Tier: 500 credits ($9.99)
 
-  if (!messages || messages.length === 0) return '';
+Important Keywords:
+1. For checking credits:
+   - Use "balance" or "credits" to check your current balance
+   - Example: "What's my balance?" or "How many credits do I have?"
 
-  // Reverse to get chronological order
-  const orderedMessages = messages.reverse();
-  
-  return orderedMessages
-    .filter(msg => {
-      // Filter out system messages and processing messages
-      if (msg.direction === 'outgoing' && (
-        msg.content.text?.includes('Processing your image...') ||
-        msg.content.text?.includes('I can generate images for you!')
-      )) {
-        return false;
-      }
-      return true;
-    })
-    .map(msg => {
-      const role = msg.direction === 'incoming' ? 'User' : 'Assistant';
-      let content = '';
-      
-      if (msg.message_type === 'text' && msg.content.text) {
-        content = msg.content.text;
-      } else if (msg.message_type === 'image') {
-        content = '[Generated image]';
-      }
-      
-      return content ? `${role}: ${content}` : null;
-    })
-    .filter(Boolean)
-    .join('\n');
-}
+2. For buying credits:
+   - Use "buy credits" to see all available packages
+   - Example: "I want to buy credits" or "Show me the packages"
+
+3. For image generation:
+   - Start with keywords like "show me", "generate", "create", "make me"
+   - Example: "Show me a sunset" or "Generate a fantasy castle"
+
+Guidelines:
+- If users ask about prices or packages, always direct them to use "buy credits" to see accurate, up-to-date pricing
+- If users ask about their balance, direct them to use "balance" or "credits"
+- For any image-related requests, remind them to use generation keywords
+- Never make up or quote specific prices - always direct users to use "buy credits" command
+- Focus on helping users use the right keywords to get what they need
+
+Remember to be concise but helpful in your responses.`;
 
 const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
 
@@ -637,7 +629,7 @@ serve(async (req) => {
               if (!hasCredits) {
                 await sendWhatsAppMessage(
                   sender.wa_id,
-                  "You don't have enough credits to generate an image. Send 'credits' to see available packages or 'balance' to check your current credits."
+                  "You don't have enough credits to generate an image. Send 'buy credits' to see available packages or 'balance' to check your current credits."
                 );
                 return new Response(JSON.stringify({ success: true }), {
                   headers: { ...corsHeaders, 'Content-Type': 'application/json' }
