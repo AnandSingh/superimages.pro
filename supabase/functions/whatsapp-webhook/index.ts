@@ -111,6 +111,41 @@ Output: "Professional portrait photography of a detailed, high-quality scene sho
 
 Return only the generated prompt, no explanations.`;
 
+const IMAGE_MODIFICATION_PROMPT = `You are an expert artist using the FLUX image generation model. Your task is to thoughtfully modify existing image prompts based on user requests.
+
+Given a previous prompt and a modification request, you will:
+1. Analyze the previous prompt to understand:
+   - The core subject and its attributes
+   - The artistic style and mood
+   - Environmental elements
+   - Lighting and atmosphere
+
+2. Analyze the user's modification request to understand:
+   - What specific aspects they want to change
+   - What elements should be preserved
+   - Whether this requires minor adjustments or major changes
+
+3. Create a new prompt that:
+   - Uses the exact same three-part structure: <PICTURE STYLE>, <SCENE DESCRIPTION>, <LIGHTING>
+   - Thoughtfully incorporates the requested changes
+   - Preserves relevant elements from the original
+   - Reads as a cohesive, natural description
+
+Examples:
+
+Previous: "Professional portrait photography of a detailed, high-quality scene showing a woman with flowing red hair in a garden. The background has blooming roses and ivy-covered walls. The lighting is warm sunset light creating golden highlights."
+
+Request: "Make it more mystical"
+Output: "Fantasy digital art of a detailed, high-quality scene showing an ethereal woman with flowing red hair that sparkles with magical energy in an enchanted garden. The background has luminescent roses and ancient ivy-covered walls shrouded in magical mist. The lighting is otherworldly with swirling particles of light creating an ethereal atmosphere."
+
+Request: "Add a cat"
+Output: "Professional portrait photography of a woman with flowing red hair in a garden, accompanied by an elegant black cat perched gracefully beside her. The background has blooming roses and ivy-covered walls. The lighting is warm sunset light creating golden highlights that catch both the woman's hair and the cat's sleek fur."
+
+Previous prompt: {previousPrompt}
+Modification request: {userRequest}
+
+Return only the modified prompt, no explanations.`;
+
 const helpfulImageRequestGuide = `I notice you didn't use any specific keywords that help me understand you want an image. 
 
 To Create New Images:
@@ -718,7 +753,35 @@ serve(async (req) => {
                 }
               });
               
-              promptText = `${modification} (maintaining style and context from previous image: ${previousPrompt})`;
+              const modificationPrompt = IMAGE_MODIFICATION_PROMPT
+                .replace('{previousPrompt}', previousPrompt)
+                .replace('{userRequest}', modification);
+              
+              console.log('Optimizing modification prompt with AI...', {
+                previousPrompt,
+                modification
+              });
+              
+              const modificationResult = await model.generateContent({
+                contents: [{ parts: [{ text: modificationPrompt }] }]
+              });
+              
+              promptText = modificationResult.response.text().trim();
+              console.log('Modified prompt:', promptText);
+            } else {
+              // For new image requests, use the original optimization prompt
+              const promptOptimizationPrompt = `${IMAGE_OPTIMIZATION_PROMPT}
+
+Input: "${promptText}"`;
+
+              console.log('Optimizing new prompt with AI...', promptText);
+              
+              const promptResult = await model.generateContent({
+                contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
+              });
+              
+              promptText = promptResult.response.text().trim();
+              console.log('Optimized prompt:', promptText);
             }
 
             // Check and deduct credits before proceeding
@@ -902,7 +965,7 @@ Important:
           // After any regular conversation, send the image guide
           await sendWhatsAppMessage(
             sender.wa_id,
-            "Tip : Use Commands like make,create, or generate to make images. To check credits, use Balance or Credits""
+            "Tip : Use Commands like make,create, or generate to make images. To check credits, use Balance or Credits"
           );
           
           const aiMessageData = {
