@@ -308,12 +308,7 @@ You can make a similar image by using keywords like: "Make it, Change it, Add", 
 - "Change it to night time"
 - "Add more details"
 
-*If you want something completely different, create a new image by using the keywords (Create, Make, Give me, etc..)  Examples:
-
-"Create a cute puppy"
-"Make me a dragon"
-"I want a picture of mountains"
-"Give me an image of space"`
+*If you want something completely different, create a new image by using the keywords (Create, Make, Give me, etc..)`
           }
         }),
       }
@@ -440,9 +435,9 @@ https://buy.stripe.com/5kAcQi3ygfR934Y3cf
 
 Click any link above to subscribe and your credits will be added automatically!
 
-By the way, these credits can be used across ALL our Superb products! (We'll be adding more and more tools weekly!)
+Please make sure you enter your full Whatsapp number during checkout.
 
-By the way make sure to use your correct Whatsapp number when checking out.
+These credits can be used across ALL our Superb products! (We'll be adding more and more tools weekly!)
 
 Type "balance" to check your current credits.`;
 }
@@ -476,13 +471,13 @@ const ONBOARDING_INITIAL_MESSAGE = `Welcome! 👋 Before we start, I need your e
 
 Please reply with your email address (for example: user@example.com).
 
-Your email will only be used for account management and important notifications.`;
+Once that's done, I'll add 10 free credits to your account!`;
 
 const INVALID_EMAIL_MESSAGE = `That doesn't look like a valid email address. 
 
 Please send a valid email address (for example: user@example.com).`;
 
-const EMAIL_CONFIRMATION_MESSAGE = `Thanks! Your email has been saved. 
+const EMAIL_CONFIRMATION_MESSAGE = `Thanks! I've added 10 image credits to your account! 
 
 Now, let me show you how I can help you create amazing images! 🎨
 
@@ -907,7 +902,7 @@ Important:
           // After any regular conversation, send the image guide
           await sendWhatsAppMessage(
             sender.wa_id,
-            "By the way, I can create images too! Try saying:\n\"Show me a sunset over mountains\"\nor\n\"Generate a magical forest\""
+            "Tip : Use Commands like make,create, or generate to make images. To check credits, use Balance or Credits""
           );
           
           const aiMessageData = {
