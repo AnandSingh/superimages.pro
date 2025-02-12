@@ -929,7 +929,7 @@ Important:
           // After any regular conversation, send the image guide
           await sendWhatsAppMessage(
             sender.wa_id,
-            "Tip : Use Commands like make,create, or generate to make images. To check credits, use Balance or Credits""
+            "Tip: Use commands like 'make', 'create', or 'generate' to make images. To check credits, use 'balance' or 'credits'"
           );
           
           const aiMessageData = {
