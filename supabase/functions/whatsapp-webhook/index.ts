@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -612,6 +613,32 @@ serve(async (req) => {
           sender: sender.wa_id,
           timestamp: message.timestamp
         });
+
+        // Simple timestamp validation (5 minutes window)
+        const messageTimestamp = parseInt(message.timestamp) * 1000;
+        const currentTime = Date.now();
+        const messageAge = (currentTime - messageTimestamp) / (1000 * 60);
+
+        if (messageAge > 5) {
+          console.log(`Message ${message.id} is too old (${messageAge.toFixed(2)} minutes), skipping`);
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Check for duplicate message using the existing messages table
+        const { data: existingMessage } = await supabase
+          .from('messages')
+          .select('id')
+          .eq('whatsapp_message_id', message.id)
+          .single();
+
+        if (existingMessage) {
+          console.log(`Duplicate message detected: ${message.id}, skipping`);
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
         // Get or create user with all necessary fields
         const { data: userData, error: userError } = await supabase

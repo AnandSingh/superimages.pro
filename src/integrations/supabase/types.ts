@@ -292,50 +292,6 @@ export type Database = {
           },
         ]
       }
-      processed_messages: {
-        Row: {
-          created_at: string | null
-          id: string
-          metadata: Json | null
-          original_timestamp: number
-          processed_at: string | null
-          status: Database["public"]["Enums"]["message_status"]
-          updated_at: string | null
-          user_id: string
-          whatsapp_message_id: string
-        }
-        Insert: {
-          created_at?: string | null
-          id?: string
-          metadata?: Json | null
-          original_timestamp: number
-          processed_at?: string | null
-          status?: Database["public"]["Enums"]["message_status"]
-          updated_at?: string | null
-          user_id: string
-          whatsapp_message_id: string
-        }
-        Update: {
-          created_at?: string | null
-          id?: string
-          metadata?: Json | null
-          original_timestamp?: number
-          processed_at?: string | null
-          status?: Database["public"]["Enums"]["message_status"]
-          updated_at?: string | null
-          user_id?: string
-          whatsapp_message_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "processed_messages_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       user_credits: {
         Row: {
           balance: number
@@ -456,7 +412,6 @@ export type Database = {
         | "FINANCIAL_ADVICE"
         | "CLARIFICATION"
         | "CONVERSATION"
-      message_status: "pending" | "processed" | "failed" | "duplicate"
       payment_status: "pending" | "completed" | "failed" | "refunded"
       product_type: "image_generation"
       transaction_type: "purchase" | "usage" | "refund" | "bonus"
