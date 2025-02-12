@@ -198,8 +198,6 @@ const modificationKeywords = [
   'but', 'and', 'with', 'without'
 ];
 
-const MESSAGE_PROCESSING_WINDOW_MINUTES = 5;
-
 async function generateImageWithReplicate(prompt: string) {
   const replicate = new Replicate({
     auth: Deno.env.get('REPLICATE_API_KEY') ?? '',
@@ -615,37 +613,6 @@ serve(async (req) => {
           timestamp: message.timestamp
         });
 
-        // Check if message is too old
-        const messageTimestamp = parseInt(message.timestamp) * 1000; // Convert to milliseconds
-        const currentTime = Date.now();
-        const messageAge = (currentTime - messageTimestamp) / (1000 * 60); // Convert to minutes
-
-        if (messageAge > MESSAGE_PROCESSING_WINDOW_MINUTES) {
-          console.log(`Message ${message.id} is too old (${messageAge.toFixed(2)} minutes), skipping processing`);
-          return new Response(JSON.stringify({ success: true }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
-        // Check if message was already processed
-        const { data: existingMessage, error: messageCheckError } = await supabase
-          .from('processed_messages')
-          .select('status')
-          .eq('whatsapp_message_id', message.id)
-          .single();
-
-        if (messageCheckError && !messageCheckError.message.includes('No rows found')) {
-          console.error('Error checking message status:', messageCheckError);
-          throw messageCheckError;
-        }
-
-        if (existingMessage) {
-          console.log(`Message ${message.id} was already processed with status: ${existingMessage.status}`);
-          return new Response(JSON.stringify({ success: true }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-
         // Get or create user with all necessary fields
         const { data: userData, error: userError } = await supabase
           .from('whatsapp_users')
@@ -663,21 +630,6 @@ serve(async (req) => {
         if (userError) {
           console.error('Error updating user:', userError)
           throw userError
-        }
-
-        // Create processing record
-        const { error: processingError } = await supabase
-          .from('processed_messages')
-          .insert({
-            whatsapp_message_id: message.id,
-            user_id: userData.id,
-            original_timestamp: messageTimestamp,
-            status: 'pending'
-          });
-
-        if (processingError) {
-          console.error('Error creating processing record:', processingError);
-          throw processingError;
         }
 
         // Store the message
@@ -700,225 +652,224 @@ serve(async (req) => {
           throw messageError
         }
 
-        try {
-          if (message.type === 'text') {
-            const messageText = message.text.body.toLowerCase();
-            console.log('Processing message:', messageText);
+        if (message.type === 'text') {
+          const messageText = message.text.body.toLowerCase();
+          console.log('Processing message:', messageText);
 
-            // Check for onboarding state first
-            const onboardingResponse = await handleOnboarding(supabase, userData.id, message.text.body);
-            let currentUserData = userData;
+          // Check for onboarding state first
+          const onboardingResponse = await handleOnboarding(supabase, userData.id, message.text.body);
+          let currentUserData = userData;
+          
+          if (onboardingResponse) {
+            await sendWhatsAppMessage(sender.wa_id, onboardingResponse);
             
-            if (onboardingResponse) {
-              await sendWhatsAppMessage(sender.wa_id, onboardingResponse);
-              
-              // If onboarding was just completed, get fresh user data
-              if (onboardingResponse === EMAIL_CONFIRMATION_MESSAGE) {
-                const { data: freshUserData, error: freshUserError } = await supabase
-                  .from('whatsapp_users')
-                  .select('*, last_interaction_type, last_image_context')
-                  .eq('id', userData.id)
-                  .single();
+            // If onboarding was just completed, get fresh user data
+            if (onboardingResponse === EMAIL_CONFIRMATION_MESSAGE) {
+              const { data: freshUserData, error: freshUserError } = await supabase
+                .from('whatsapp_users')
+                .select('*, last_interaction_type, last_image_context')
+                .eq('id', userData.id)
+                .single();
                 
-                if (!freshUserError) {
-                  currentUserData = freshUserData;
-                  console.log('Updated user context after onboarding:', currentUserData);
-                } else {
-                  console.error('Error getting fresh user data:', freshUserError);
-                }
+              if (!freshUserError) {
+                currentUserData = freshUserData;
+                console.log('Updated user context after onboarding:', currentUserData);
               } else {
-                return new Response(JSON.stringify({ success: true }), {
-                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                });
+                console.error('Error getting fresh user data:', freshUserError);
               }
+            } else {
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+          }
+
+          // Check for greetings first
+          if (greetingKeywords.some(keyword => messageText.startsWith(keyword))) {
+            await sendWhatsAppMessage(sender.wa_id, INITIAL_GREETING);
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          // First check for direct image generation requests
+          const isDirectImageRequest = imageKeywords.some(keyword => 
+            messageText.includes(keyword)
+          );
+
+          const isImageContext = currentUserData.last_interaction_type === 'image_generation';
+          const isModificationRequest = isImageContext && (
+            modificationKeywords.some(keyword => messageText.includes(keyword)) ||
+            messageText.match(/^(make|change|turn|set)\s+the\s+/) ||
+            messageText.startsWith('but') ||
+            messageText.startsWith('and')
+          );
+
+          if (isDirectImageRequest || isModificationRequest) {
+            let promptText = message.text.body;
+
+            if (isModificationRequest && currentUserData.last_image_context) {
+              const previousPrompt = currentUserData.last_image_context.prompt;
+              let modification = message.text.body;
+              
+              modificationKeywords.forEach(keyword => {
+                if (modification.toLowerCase().startsWith(keyword)) {
+                  modification = modification.slice(keyword.length).trim();
+                }
+              });
+              
+              promptText = `${modification} (maintaining style and context from previous image: ${previousPrompt})`;
             }
 
-            // Check for greetings first
-            if (greetingKeywords.some(keyword => messageText.startsWith(keyword))) {
-              await sendWhatsAppMessage(sender.wa_id, INITIAL_GREETING);
+            // Check and deduct credits before proceeding
+            const hasCredits = await checkAndDeductCredits(currentUserData.id);
+            if (!hasCredits) {
+              await sendWhatsAppMessage(
+                sender.wa_id,
+                "You don't have enough credits to generate an image. Send 'buy credits' to see available packages or 'balance' to check your current credits."
+              );
               return new Response(JSON.stringify({ success: true }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
             }
 
-            // First check for direct image generation requests
-            const isDirectImageRequest = imageKeywords.some(keyword => 
-              messageText.includes(keyword)
-            );
-
-            const isImageContext = currentUserData.last_interaction_type === 'image_generation';
-            const isModificationRequest = isImageContext && (
-              modificationKeywords.some(keyword => messageText.includes(keyword)) ||
-              messageText.match(/^(make|change|turn|set)\s+the\s+/) ||
-              messageText.startsWith('but') ||
-              messageText.startsWith('and')
-            );
-
-            if (isDirectImageRequest || isModificationRequest) {
-              let promptText = message.text.body;
-
-              if (isModificationRequest && currentUserData.last_image_context) {
-                const previousPrompt = currentUserData.last_image_context.prompt;
-                let modification = message.text.body;
-                
-                modificationKeywords.forEach(keyword => {
-                  if (modification.toLowerCase().startsWith(keyword)) {
-                    modification = modification.slice(keyword.length).trim();
-                  }
-                });
-                
-                promptText = `${modification} (maintaining style and context from previous image: ${previousPrompt})`;
-              }
-
-              // Check and deduct credits before proceeding
-              const hasCredits = await checkAndDeductCredits(currentUserData.id);
-              if (!hasCredits) {
-                await sendWhatsAppMessage(
-                  sender.wa_id,
-                  "You don't have enough credits to generate an image. Send 'buy credits' to see available packages or 'balance' to check your current credits."
-                );
-                return new Response(JSON.stringify({ success: true }), {
-                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                });
-              }
-
-              // Optimize the prompt using the new format
-              const promptOptimizationPrompt = `${IMAGE_OPTIMIZATION_PROMPT}
+            // Optimize the prompt using the new format
+            const promptOptimizationPrompt = `${IMAGE_OPTIMIZATION_PROMPT}
 
 Input: "${promptText}"`;
 
-              console.log('Optimizing prompt with AI...', promptText);
-              
-              const promptResult = await model.generateContent({
-                contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
-              });
-              
-              const optimizedPrompt = promptResult.response.text().trim();
-              console.log('Optimized prompt:', optimizedPrompt);
+            console.log('Optimizing prompt with AI...', promptText);
+            
+            const promptResult = await model.generateContent({
+              contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
+            });
+            
+            const optimizedPrompt = promptResult.response.text().trim();
+            console.log('Optimized prompt:', optimizedPrompt);
 
-              const { error: contextError } = await supabase
-                .from('whatsapp_users')
-                .update({
-                  last_interaction_type: 'image_generation',
-                  last_image_context: {
-                    prompt: optimizedPrompt,
-                    timestamp: new Date().toISOString()
+            const { error: contextError } = await supabase
+              .from('whatsapp_users')
+              .update({
+                last_interaction_type: 'image_generation',
+                last_image_context: {
+                  prompt: optimizedPrompt,
+                  timestamp: new Date().toISOString()
+                }
+              })
+              .eq('id', currentUserData.id);
+
+            if (contextError) {
+              console.error('Error updating user context:', contextError);
+              throw contextError;
+            }
+
+            await sendWhatsAppMessage(
+              sender.wa_id,
+              "I'm generating your image now... This might take a few seconds. 🎨"
+            );
+
+            try {
+              console.log('Starting image generation with Replicate...');
+              const imageUrl = await generateImageWithReplicate(optimizedPrompt);
+              console.log('Generated image URL:', imageUrl);
+
+              const whatsappResponse = await sendWhatsAppImage(
+                sender.wa_id,
+                imageUrl,
+                "Here's your generated image! 🎨\n\nYou can modify this image by saying things like:\n- Make it more vibrant\n- Change the lighting\n- Add more details"
+              );
+              
+              const aiMessageData = {
+                whatsapp_message_id: whatsappResponse.messages[0].id,
+                user_id: currentUserData.id,
+                direction: 'outgoing',
+                message_type: 'image',
+                content: { 
+                  image: {
+                    url: imageUrl,
+                    caption: "Here's your generated image! 🎨"
                   }
-                })
-                .eq('id', currentUserData.id);
-
-              if (contextError) {
-                console.error('Error updating user context:', contextError);
-                throw contextError;
+                },
+                status: 'sent',
+                created_at: new Date().toISOString()
               }
 
+              const { error: aiMessageError } = await supabase
+                .from('messages')
+                .insert(aiMessageData)
+
+              if (aiMessageError) {
+                console.error('Error storing AI message:', aiMessageError)
+                throw aiMessageError
+              }
+            } catch (error) {
+              console.error('Error generating or sending image:', error);
+              // Since image generation failed, let's refund the credit
+              await supabase.rpc('add_user_credits', {
+                p_user_id: currentUserData.id,
+                p_amount: 1,
+                p_transaction_type: 'refund',
+                p_product_type: 'image_generation',
+                p_metadata: { reason: 'generation_failed' }
+              });
+              
               await sendWhatsAppMessage(
                 sender.wa_id,
-                "I'm generating your image now... This might take a few seconds. 🎨"
+                "I apologize, but I encountered an error while generating your image. Your credit has been refunded. Please try again."
               );
-
-              try {
-                console.log('Starting image generation with Replicate...');
-                const imageUrl = await generateImageWithReplicate(optimizedPrompt);
-                console.log('Generated image URL:', imageUrl);
-
-                const whatsappResponse = await sendWhatsAppImage(
-                  sender.wa_id,
-                  imageUrl,
-                  "Here's your generated image! 🎨\n\nYou can modify this image by saying things like:\n- Make it more vibrant\n- Change the lighting\n- Add more details"
-                );
-                
-                const aiMessageData = {
-                  whatsapp_message_id: whatsappResponse.messages[0].id,
-                  user_id: currentUserData.id,
-                  direction: 'outgoing',
-                  message_type: 'image',
-                  content: { 
-                    image: {
-                      url: imageUrl,
-                      caption: "Here's your generated image! 🎨"
-                    }
-                  },
-                  status: 'sent',
-                  created_at: new Date().toISOString()
-                }
-
-                const { error: aiMessageError } = await supabase
-                  .from('messages')
-                  .insert(aiMessageData)
-
-                if (aiMessageError) {
-                  console.error('Error storing AI message:', aiMessageError)
-                  throw aiMessageError
-                }
-              } catch (error) {
-                console.error('Error generating or sending image:', error);
-                // Since image generation failed, let's refund the credit
-                await supabase.rpc('add_user_credits', {
-                  p_user_id: currentUserData.id,
-                  p_amount: 1,
-                  p_transaction_type: 'refund',
-                  p_product_type: 'image_generation',
-                  p_metadata: { reason: 'generation_failed' }
-                });
-                
-                await sendWhatsAppMessage(
-                  sender.wa_id,
-                  "I apologize, but I encountered an error while generating your image. Your credit has been refunded. Please try again."
-                );
-                return new Response(JSON.stringify({ success: true }), {
-                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                });
-              }
-              
               return new Response(JSON.stringify({ success: true }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
             }
             
-            // After image generation, check for credit balance queries
-            if (creditBalanceKeywords.some(keyword => 
-              messageText === keyword || 
-              messageText.startsWith(keyword + ' ') || 
-              messageText === 'balance' || 
-              messageText === 'credits'
-            )) {
-              const creditsMessage = await getCreditsMessage(currentUserData.id);
-              await sendWhatsAppMessage(sender.wa_id, creditsMessage);
-              return new Response(JSON.stringify({ success: true }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-              });
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          
+          // After image generation, check for credit balance queries
+          if (creditBalanceKeywords.some(keyword => 
+            messageText === keyword || 
+            messageText.startsWith(keyword + ' ') || 
+            messageText === 'balance' || 
+            messageText === 'credits'
+          )) {
+            const creditsMessage = await getCreditsMessage(currentUserData.id);
+            await sendWhatsAppMessage(sender.wa_id, creditsMessage);
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          // Finally check for buy credits command
+          if (messageText === 'buy credits') {
+            const creditsGuide = await getDynamicCreditsGuide();
+            await sendWhatsAppMessage(sender.wa_id, creditsGuide);
+            return new Response(JSON.stringify({ success: true }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          // Normal conversation handling
+          const conversationHistory = await getConversationHistory(supabase, currentUserData.id);
+          console.log('Retrieved conversation history:', conversationHistory);
+          
+          if (currentUserData.last_interaction_type === 'image_generation') {
+            const { error: contextError } = await supabase
+              .from('whatsapp_users')
+              .update({
+                last_interaction_type: 'conversation',
+                last_image_context: null
+              })
+              .eq('id', currentUserData.id);
+
+            if (contextError) {
+              console.error('Error updating user context:', contextError);
+              throw contextError;
             }
+          }
 
-            // Finally check for buy credits command
-            if (messageText === 'buy credits') {
-              const creditsGuide = await getDynamicCreditsGuide();
-              await sendWhatsAppMessage(sender.wa_id, creditsGuide);
-              return new Response(JSON.stringify({ success: true }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-              });
-            }
-
-            // Normal conversation handling
-            const conversationHistory = await getConversationHistory(supabase, currentUserData.id);
-            console.log('Retrieved conversation history:', conversationHistory);
-            
-            if (currentUserData.last_interaction_type === 'image_generation') {
-              const { error: contextError } = await supabase
-                .from('whatsapp_users')
-                .update({
-                  last_interaction_type: 'conversation',
-                  last_image_context: null
-                })
-                .eq('id', currentUserData.id);
-
-              if (contextError) {
-                console.error('Error updating user context:', contextError);
-                throw contextError;
-              }
-            }
-
-            const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands.
+          const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands.
 
 Previous conversation:
 ${conversationHistory}
@@ -934,63 +885,44 @@ Important:
 3. Keep responses concise and friendly
 4. Never invent features or make up information`;
           
-            const result = await model.generateContent({
-              contents: [{
-                parts: [{ text: prompt }]
-              }]
-            });
-            
-            const response = await result.response;
-            const aiResponse = response.text();
-            
-            console.log('AI generated response:', aiResponse);
+          const result = await model.generateContent({
+            contents: [{
+              parts: [{ text: prompt }]
+            }]
+          });
+          
+          const response = await result.response;
+          const aiResponse = response.text();
+          
+          console.log('AI generated response:', aiResponse);
 
-            // Send the AI response
-            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse);
-            
-            // After any regular conversation, send the image guide
-            await sendWhatsAppMessage(
-              sender.wa_id,
-              "Tip : Use Commands like make,create, or generate to make images. To check credits, use Balance or Credits"
-            );
-            
-            const aiMessageData = {
-              whatsapp_message_id: whatsappResponse.messages[0].id,
-              user_id: currentUserData.id,
-              direction: 'outgoing',
-              message_type: 'text',
-              content: { text: aiResponse },
-              status: 'sent',
-              created_at: new Date().toISOString()
-            }
-
-            const { error: aiMessageError } = await supabase
-              .from('messages')
-              .insert(aiMessageData)
-
-            if (aiMessageError) {
-              console.error('Error storing AI message:', aiMessageError)
-              throw aiMessageError
-            }
+          // Send the AI response
+          const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse);
+          
+          // After any regular conversation, send the image guide
+          await sendWhatsAppMessage(
+            sender.wa_id,
+            "Tip : Use Commands like make,create, or generate to make images. To check credits, use Balance or Credits""
+          );
+          
+          const aiMessageData = {
+            whatsapp_message_id: whatsappResponse.messages[0].id,
+            user_id: currentUserData.id,
+            direction: 'outgoing',
+            message_type: 'text',
+            content: { text: aiResponse },
+            status: 'sent',
+            created_at: new Date().toISOString()
           }
-        } catch (error) {
-          console.error('Error processing message:', error);
-          // Update processing status on error
-          const { error: updateError } = await supabase
-            .from('processed_messages')
-            .update({
-              status: 'failed',
-              processed_at: new Date().toISOString(),
-              metadata: {
-                error: error.message
-              }
-            })
-            .eq('whatsapp_message_id', message.id);
 
-          if (updateError) {
-            console.error('Error updating processing status:', updateError);
+          const { error: aiMessageError } = await supabase
+            .from('messages')
+            .insert(aiMessageData)
+
+          if (aiMessageError) {
+            console.error('Error storing AI message:', aiMessageError)
+            throw aiMessageError
           }
-          throw error;
         }
       }
 
