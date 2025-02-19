@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -8,6 +9,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Updated keyword arrays for better detection
 const creditBalanceKeywords = [
   'balance',
   'credits',
@@ -60,6 +62,7 @@ const greetingKeywords = [
   'good evening'
 ];
 
+// Enhanced system prompt for AI with pricing knowledge
 const CHAT_SYSTEM_PROMPT = `You are a helpful WhatsApp image generation assistant. Here's how to help users:
 
 CORE COMMANDS - Guide users to these specific commands:
@@ -171,18 +174,28 @@ For example:
 Try it now! What would you like me to create?`;
 
 const imageKeywords = [
+  // Want/Need variations
   'want', 'need', 'give me',
+  // General commands
   'show', 'generate', 'create', 'make',
+  // Specific requests
   'photo', 'picture', 'image',
+  // Context switches
   'now i want', 'can you show', 'how about',
+  // Simple commands
   'draw', 'create'
 ];
 
 const modificationKeywords = [
+  // Direct modifications
   'make it', 'change it', 'turn it',
+  // Style changes
   'more', 'less', 'bigger', 'smaller',
+  // Context switches
   'now make', 'now change', 'instead make',
+  // Additions/Removals
   'add', 'remove', 'put', 'take',
+  // Simple changes
   'but', 'and', 'with', 'without'
 ];
 
@@ -194,6 +207,7 @@ async function generateImageWithReplicate(prompt: string) {
   console.log("Starting image generation with prompt:", prompt);
   
   try {
+    // Ensure the prompt is properly formatted
     if (!prompt || typeof prompt !== 'string') {
       throw new Error("Invalid prompt format");
     }
@@ -269,6 +283,7 @@ async function sendWhatsAppImage(recipient: string, imageUrl: string, caption?: 
   }
 
   try {
+    // First send a status message
     await sendWhatsAppMessage(recipient, "Processing your image... 🎨");
 
     const response = await fetch(
@@ -443,7 +458,7 @@ async function getConversationHistory(supabase: any, userId: string): Promise<st
 
   const formattedMessages = messages
     .map(msg => {
-      const prefix = msg.direction === 'incoming' ? 'User: ' : '';
+      const prefix = msg.direction === 'incoming' ? 'User: ' : 'You: ';
       const content = msg.content?.text || 'No text content';
       return prefix + content;
     })
@@ -489,6 +504,7 @@ function isValidEmail(email: string): boolean {
 }
 
 async function handleOnboarding(supabase: any, userId: string, userMessage: string): Promise<string | null> {
+  // Get user's current onboarding state
   const { data: userData, error: userError } = await supabase
     .from('whatsapp_users')
     .select('onboarding_state, onboarding_completed')
@@ -500,10 +516,12 @@ async function handleOnboarding(supabase: any, userId: string, userMessage: stri
     return null;
   }
 
+  // If onboarding is completed, return null to continue with normal flow
   if (userData.onboarding_completed) {
     return null;
   }
 
+  // If this is the first message (onboarding not started)
   if (userData.onboarding_state === 'not_started') {
     await supabase
       .from('whatsapp_users')
@@ -513,6 +531,7 @@ async function handleOnboarding(supabase: any, userId: string, userMessage: stri
     return ONBOARDING_INITIAL_MESSAGE;
   }
 
+  // If we're waiting for email
   if (userData.onboarding_state === 'awaiting_email') {
     const email = userMessage.trim().toLowerCase();
     
@@ -520,6 +539,7 @@ async function handleOnboarding(supabase: any, userId: string, userMessage: stri
       return INVALID_EMAIL_MESSAGE;
     }
 
+    // Email is valid, save it and complete onboarding
     await supabase
       .from('whatsapp_users')
       .update({
@@ -594,6 +614,7 @@ serve(async (req) => {
           timestamp: message.timestamp
         });
 
+        // Simple timestamp validation (5 minutes window)
         const messageTimestamp = parseInt(message.timestamp) * 1000;
         const currentTime = Date.now();
         const messageAge = (currentTime - messageTimestamp) / (1000 * 60);
@@ -605,6 +626,7 @@ serve(async (req) => {
           });
         }
 
+        // Check for duplicate message using the existing messages table
         const { data: existingMessage } = await supabase
           .from('messages')
           .select('id')
@@ -618,6 +640,7 @@ serve(async (req) => {
           });
         }
 
+        // Get or create user with all necessary fields
         const { data: userData, error: userError } = await supabase
           .from('whatsapp_users')
           .upsert({
@@ -636,6 +659,7 @@ serve(async (req) => {
           throw userError
         }
 
+        // Store the message
         const messageData = {
           whatsapp_message_id: message.id,
           user_id: userData.id,
@@ -659,12 +683,14 @@ serve(async (req) => {
           const messageText = message.text.body.toLowerCase();
           console.log('Processing message:', messageText);
 
+          // Check for onboarding state first
           const onboardingResponse = await handleOnboarding(supabase, userData.id, message.text.body);
           let currentUserData = userData;
           
           if (onboardingResponse) {
             await sendWhatsAppMessage(sender.wa_id, onboardingResponse);
             
+            // If onboarding was just completed, get fresh user data
             if (onboardingResponse === EMAIL_CONFIRMATION_MESSAGE) {
               const { data: freshUserData, error: freshUserError } = await supabase
                 .from('whatsapp_users')
@@ -685,6 +711,7 @@ serve(async (req) => {
             }
           }
 
+          // Check for greetings first
           if (greetingKeywords.some(keyword => messageText.startsWith(keyword))) {
             await sendWhatsAppMessage(sender.wa_id, INITIAL_GREETING);
             return new Response(JSON.stringify({ success: true }), {
@@ -692,6 +719,7 @@ serve(async (req) => {
             });
           }
 
+          // First check for direct image generation requests
           const isDirectImageRequest = imageKeywords.some(keyword => 
             messageText.includes(keyword)
           );
@@ -720,6 +748,7 @@ serve(async (req) => {
               promptText = `${modification} (maintaining style and context from previous image: ${previousPrompt})`;
             }
 
+            // Check and deduct credits before proceeding
             const hasCredits = await checkAndDeductCredits(currentUserData.id);
             if (!hasCredits) {
               await sendWhatsAppMessage(
@@ -731,6 +760,7 @@ serve(async (req) => {
               });
             }
 
+            // Optimize the prompt using the new format
             const promptOptimizationPrompt = `${IMAGE_OPTIMIZATION_PROMPT}
 
 Input: "${promptText}"`;
@@ -801,6 +831,7 @@ Input: "${promptText}"`;
               }
             } catch (error) {
               console.error('Error generating or sending image:', error);
+              // Since image generation failed, let's refund the credit
               await supabase.rpc('add_user_credits', {
                 p_user_id: currentUserData.id,
                 p_amount: 1,
@@ -822,7 +853,8 @@ Input: "${promptText}"`;
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           }
-
+          
+          // After image generation, check for credit balance queries
           if (creditBalanceKeywords.some(keyword => 
             messageText === keyword || 
             messageText.startsWith(keyword + ' ') || 
@@ -836,6 +868,7 @@ Input: "${promptText}"`;
             });
           }
 
+          // Finally check for buy credits command
           if (messageText === 'buy credits') {
             const creditsGuide = await getDynamicCreditsGuide();
             await sendWhatsAppMessage(sender.wa_id, creditsGuide);
@@ -844,6 +877,7 @@ Input: "${promptText}"`;
             });
           }
 
+          // Normal conversation handling
           const conversationHistory = await getConversationHistory(supabase, currentUserData.id);
           console.log('Retrieved conversation history:', conversationHistory);
           
@@ -862,7 +896,7 @@ Input: "${promptText}"`;
             }
           }
 
-          const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands. Never prefix your responses with "You:" or any other prefix.
+          const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands.
 
 Previous conversation:
 ${conversationHistory}
@@ -876,9 +910,8 @@ Important:
 1. First understand what the user wants (checking balance, buying credits, or creating images)
 2. Then guide them to the exact command they should use
 3. Keep responses concise and friendly
-4. Never invent features or make up information
-5. Never prefix your responses with "You:" or any similar prefix`;
-
+4. Never invent features or make up information`;
+          
           const result = await model.generateContent({
             contents: [{
               parts: [{ text: prompt }]
@@ -890,8 +923,10 @@ Important:
           
           console.log('AI generated response:', aiResponse);
 
-          await sendWhatsAppMessage(sender.wa_id, aiResponse);
+          // Send the AI response
+          const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse);
           
+          // After any regular conversation, send the image guide
           await sendWhatsAppMessage(
             sender.wa_id,
             "Tip: Use commands like 'make', 'create', or 'generate' to make images. To check credits, use 'balance' or 'credits'"
