@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
@@ -458,9 +457,10 @@ async function getConversationHistory(supabase: any, userId: string): Promise<st
 
   const formattedMessages = messages
     .map(msg => {
-      const prefix = msg.direction === 'incoming' ? 'User: ' : 'You: ';
-      const content = msg.content?.text || 'No text content';
-      return prefix + content;
+      if (msg.direction === 'incoming') {
+        return `User: ${msg.content?.text || 'No text content'}`;
+      }
+      return msg.content?.text || 'No text content';
     })
     .reverse()
     .join('\n');
@@ -896,7 +896,7 @@ Input: "${promptText}"`;
             }
           }
 
-          const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands.
+          const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands. Do not add any prefixes to your responses.
 
 Previous conversation:
 ${conversationHistory}
@@ -910,8 +910,9 @@ Important:
 1. First understand what the user wants (checking balance, buying credits, or creating images)
 2. Then guide them to the exact command they should use
 3. Keep responses concise and friendly
-4. Never invent features or make up information`;
-          
+4. Never invent features or make up information
+5. Do not add any prefix to your responses - just provide the response directly`;
+
           const result = await model.generateContent({
             contents: [{
               parts: [{ text: prompt }]
