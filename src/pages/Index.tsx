@@ -1,8 +1,8 @@
 
 import { motion } from "framer-motion";
-import WhatsAppChat from "@/components/WhatsAppChat";
+import WhatsAppMockup from "@/components/WhatsAppMockup";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Mail, Globe } from "lucide-react";
+import { Mail, Globe } from "lucide-react";
 
 const Index = () => {
   return (
@@ -14,6 +14,7 @@ const Index = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
+            className="text-center md:text-left"
           >
             <h1 className="text-5xl md:text-6xl font-bold text-foreground mb-6 leading-tight">
               Create Images in WhatsApp
@@ -35,11 +36,9 @@ const Index = () => {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="relative"
+            className="relative flex justify-center md:justify-end"
           >
-            <div className="w-full max-w-[300px] mx-auto">
-              <WhatsAppChat />
-            </div>
+            <WhatsAppMockup />
           </motion.div>
         </div>
       </section>
@@ -66,16 +65,16 @@ const Index = () => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: index * 0.1 }}
-                className="relative group rounded-lg overflow-hidden"
+                className="relative rounded-lg overflow-hidden mx-auto w-full max-w-sm"
               >
+                <div className="absolute top-0 left-0 right-0 bg-black/60 p-4 z-10">
+                  <p className="text-white text-sm text-center">{example.prompt}</p>
+                </div>
                 <img
                   src={example.image}
                   alt={example.prompt}
                   className="w-full h-64 object-cover"
                 />
-                <div className="absolute inset-0 bg-black/60 flex items-end p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <p className="text-white text-sm">{example.prompt}</p>
-                </div>
               </motion.div>
             ))}
           </div>
@@ -96,22 +95,32 @@ const Index = () => {
         <div className="container mx-auto px-4">
           <h3 className="text-2xl font-bold mb-8 text-center">Get in Touch</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
+            <div className="space-y-4 text-center md:text-left">
+              <div className="flex items-center gap-2 justify-center md:justify-start">
                 <Mail className="h-5 w-5 text-[#2CB67D]" />
                 <a href="mailto:support@example.com" className="text-muted-foreground hover:text-foreground">
                   support@example.com
                 </a>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 justify-center md:justify-start">
                 <Globe className="h-5 w-5 text-[#2CB67D]" />
-                <a href="/privacy-policy" className="text-muted-foreground hover:text-foreground">
+                <a 
+                  href="https://superbtools.pro/privacy-policy" 
+                  className="text-muted-foreground hover:text-foreground"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   Privacy Policy
                 </a>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 justify-center md:justify-start">
                 <Globe className="h-5 w-5 text-[#2CB67D]" />
-                <a href="/terms" className="text-muted-foreground hover:text-foreground">
+                <a 
+                  href="https://superbtools.pro/terms-of-service" 
+                  className="text-muted-foreground hover:text-foreground"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   Terms of Service
                 </a>
               </div>
@@ -120,7 +129,7 @@ const Index = () => {
               </p>
             </div>
             <div className="flex justify-center md:justify-end">
-              <img src="/logo.png" alt="Superb Logo" className="h-12" />
+              <img src="/superb-logo.png" alt="Superb Logo" className="h-12" />
             </div>
           </div>
         </div>
