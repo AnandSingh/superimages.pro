@@ -8,18 +8,18 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
-      <section className="container mx-auto px-4 lg:px-24 py-16 md:py-24 min-h-[90vh] flex items-center">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+      <section className="container mx-auto px-4 lg:px-24 py-8 md:py-12 min-h-[95vh] flex items-center">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center max-w-[1400px] mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className="text-center md:text-left"
           >
-            <h1 className="text-5xl md:text-7xl font-bold text-foreground mb-6 leading-tight">
+            <h1 className="text-6xl md:text-8xl font-bold text-foreground mb-8 leading-tight">
               Create Images in WhatsApp
             </h1>
-            <p className="text-xl md:text-2xl text-muted-foreground mb-8">
+            <p className="text-xl md:text-3xl text-muted-foreground mb-10">
               Just say what you want, and it's ready in seconds!
             </p>
             <a 
@@ -29,12 +29,12 @@ const Index = () => {
             >
               <Button 
                 size="lg" 
-                className="bg-[#2CB67D] hover:bg-[#2CB67D]/90 text-white font-semibold px-8 py-6 text-lg h-auto"
+                className="bg-[#2CB67D] hover:bg-[#2CB67D]/90 text-white font-semibold px-10 py-8 text-xl h-auto"
               >
                 Click Here to Chat
               </Button>
             </a>
-            <p className="mt-4 text-sm text-muted-foreground">
+            <p className="mt-6 text-lg text-muted-foreground">
               Free to try, no credit card needed
             </p>
           </motion.div>
@@ -47,7 +47,7 @@ const Index = () => {
             <img 
               src="https://s3.gifyu.com/images/bSkqc.gif" 
               alt="WhatsApp AI Demo"
-              className="w-full max-w-[400px]"
+              className="w-full max-w-[500px]"
             />
           </motion.div>
         </div>
@@ -147,7 +147,7 @@ const Index = () => {
               <img 
                 alt="Superb Logo" 
                 src="/lovable-uploads/95a69163-fc19-4829-a1f9-70e95ab9fe4d.png" 
-                className="h-32 object-contain" 
+                className="h-48 object-contain" 
               />
             </div>
           </div>
