@@ -159,28 +159,28 @@ const Index = () => {
 
 const examples = [
   {
-    prompt: "Create a sleek black sports car on a mountain road",
-    image: "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=800&q=80"
+    prompt: "Create a black sports car in a rainy night city",
+    image: "/lovable-uploads/af0256b5-5b3e-4033-ba76-f39f598433ac.png"
   },
   {
-    prompt: "An anime-style couple having dinner at a restaurant",
-    image: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80"
+    prompt: "Show me Batman in a dark alley",
+    image: "/lovable-uploads/c906dac1-9222-4453-af7d-c6ad9ccf219a.png"
   },
   {
-    prompt: "Batman standing on a Gotham city rooftop at night",
-    image: "https://images.unsplash.com/photo-1509347528160-9a9e33742cdb?auto=format&fit=crop&w=800&q=80"
+    prompt: "Make me the Petronas Towers at sunset",
+    image: "/lovable-uploads/dd8dabde-764d-48d3-b337-e70d0f3f972c.png"
   },
   {
-    prompt: "A friendly cat and dog playing together",
-    image: "https://images.unsplash.com/photo-1450778869180-41d0601e046e?auto=format&fit=crop&w=800&q=80"
+    prompt: "Create a cute plush lion toy",
+    image: "/lovable-uploads/2ec9c20a-367e-4251-9483-73dd8cceb13a.png"
   },
   {
-    prompt: "A magical sunset over a tropical beach",
-    image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"
+    prompt: "Make me a strawberry cheesecake",
+    image: "/lovable-uploads/9d62d7af-bd2d-496e-a70b-91b94443ccee.png"
   },
   {
-    prompt: "A cozy coffee shop interior with warm lighting",
-    image: "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80"
+    prompt: "Create an anime cafe with cherry blossoms",
+    image: "/lovable-uploads/0adcaefe-b8a6-4149-9652-aeacda5d48ba.png"
   }
 ];
 
