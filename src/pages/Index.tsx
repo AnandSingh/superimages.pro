@@ -8,7 +8,7 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
-      <section className="container mx-auto px-4 lg:px-24 py-16 md:py-24">
+      <section className="container mx-auto px-4 lg:px-24 py-16 md:py-24 min-h-[90vh] flex items-center">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -16,18 +16,24 @@ const Index = () => {
             transition={{ duration: 0.6 }}
             className="text-center md:text-left"
           >
-            <h1 className="text-5xl md:text-6xl font-bold text-foreground mb-6 leading-tight">
+            <h1 className="text-5xl md:text-7xl font-bold text-foreground mb-6 leading-tight">
               Create Images in WhatsApp
             </h1>
-            <p className="text-xl text-muted-foreground mb-8">
+            <p className="text-xl md:text-2xl text-muted-foreground mb-8">
               Just say what you want, and it's ready in seconds!
             </p>
-            <Button 
-              size="lg" 
-              className="bg-[#2CB67D] hover:bg-[#2CB67D]/90 text-white font-semibold px-8 py-6 text-lg h-auto"
+            <a 
+              href="https://linktw.in/cfITPA"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              Click Here to Chat
-            </Button>
+              <Button 
+                size="lg" 
+                className="bg-[#2CB67D] hover:bg-[#2CB67D]/90 text-white font-semibold px-8 py-6 text-lg h-auto"
+              >
+                Click Here to Chat
+              </Button>
+            </a>
             <p className="mt-4 text-sm text-muted-foreground">
               Free to try, no credit card needed
             </p>
@@ -41,7 +47,7 @@ const Index = () => {
             <img 
               src="https://s3.gifyu.com/images/bSkqc.gif" 
               alt="WhatsApp AI Demo"
-              className="w-full max-w-[300px] rounded-2xl shadow-xl"
+              className="w-full max-w-[400px]"
             />
           </motion.div>
         </div>
@@ -84,12 +90,18 @@ const Index = () => {
           </div>
 
           <div className="text-center">
-            <Button 
-              size="lg"
-              className="bg-[#2CB67D] hover:bg-[#2CB67D]/90 text-white font-semibold px-8 py-6 text-lg h-auto"
+            <a 
+              href="https://linktw.in/cfITPA"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              TRY FOR FREE
-            </Button>
+              <Button 
+                size="lg"
+                className="bg-[#2CB67D] hover:bg-[#2CB67D]/90 text-white font-semibold px-8 py-6 text-lg h-auto"
+              >
+                TRY FOR FREE
+              </Button>
+            </a>
           </div>
         </div>
       </section>
@@ -135,7 +147,7 @@ const Index = () => {
               <img 
                 alt="Superb Logo" 
                 src="/lovable-uploads/95a69163-fc19-4829-a1f9-70e95ab9fe4d.png" 
-                className="h-20 object-fill" 
+                className="h-32 object-contain" 
               />
             </div>
           </div>
@@ -161,6 +173,14 @@ const examples = [
   {
     prompt: "A friendly cat and dog playing together",
     image: "https://images.unsplash.com/photo-1450778869180-41d0601e046e?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    prompt: "A magical sunset over a tropical beach",
+    image: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    prompt: "A cozy coffee shop interior with warm lighting",
+    image: "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80"
   }
 ];
 
