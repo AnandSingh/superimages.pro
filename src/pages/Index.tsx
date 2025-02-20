@@ -42,12 +42,12 @@ const Index = () => {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
-            className="relative flex justify-center md:justify-end"
+            className="relative flex justify-center md:justify-end px-0 md:px-4"
           >
             <img 
               src="https://s3.gifyu.com/images/bSkqc.gif" 
               alt="WhatsApp AI Demo"
-              className="w-full max-w-[800px] md:max-w-[500px]"
+              className="w-full max-w-[1000px] md:max-w-[500px]"
             />
           </motion.div>
         </div>
