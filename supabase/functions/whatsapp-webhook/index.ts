@@ -416,7 +416,7 @@ Send "buy credits" to see available packages.`;
 }
 
 async function getDynamicCreditsGuide(): Promise<string> {
-  return `🎨 Superb Tools Subscriptions [50% Off for a limited time only!}
+  return `🎨 Superb Images Subscriptions [50% Off for a limited time only!}
 
 🎈 Basic Package
 • 75 credits monthly (75 images)
@@ -436,8 +436,6 @@ https://buy.stripe.com/5kAcQi3ygfR934Y3cf
 Click any link above to subscribe and your credits will be added automatically!
 
 Please make sure you enter your full Whatsapp number during checkout.
-
-These credits can be used across ALL our Superb products! (We'll be adding more and more tools weekly!)
 
 Type "balance" to check your current credits.`;
 }
