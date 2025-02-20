@@ -16,10 +16,10 @@ const Index = () => {
             transition={{ duration: 0.6 }}
             className="text-center md:text-left"
           >
-            <h1 className="text-6xl md:text-8xl font-bold text-foreground mb-8 leading-tight">
+            <h1 className="text-5xl leading-[1.1] md:text-8xl font-bold text-foreground mb-6 md:mb-8 md:leading-tight">
               Create Images in WhatsApp
             </h1>
-            <p className="text-xl md:text-3xl text-muted-foreground mb-10">
+            <p className="text-lg md:text-3xl text-muted-foreground mb-8 md:mb-10">
               Just say what you want, and it's ready in seconds!
             </p>
             <a 
@@ -29,12 +29,12 @@ const Index = () => {
             >
               <Button 
                 size="lg" 
-                className="bg-[#2CB67D] hover:bg-[#2CB67D]/90 text-white font-semibold px-10 py-8 text-xl h-auto"
+                className="bg-[#25D366] hover:bg-[#25D366]/90 text-white font-semibold px-10 py-8 text-xl h-auto"
               >
                 Click Here to Chat
               </Button>
             </a>
-            <p className="mt-6 text-lg text-muted-foreground">
+            <p className="mt-4 md:mt-6 text-base md:text-lg text-muted-foreground">
               Free to try, no credit card needed
             </p>
           </motion.div>
@@ -47,7 +47,7 @@ const Index = () => {
             <img 
               src="https://s3.gifyu.com/images/bSkqc.gif" 
               alt="WhatsApp AI Demo"
-              className="w-full max-w-[500px]"
+              className="w-full max-w-[600px] md:max-w-[500px]"
             />
           </motion.div>
         </div>
@@ -112,13 +112,13 @@ const Index = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             <div className="space-y-4 text-center md:text-left">
               <div className="flex items-center gap-2 justify-center md:justify-start">
-                <Mail className="h-5 w-5 text-[#2CB67D]" />
+                <Mail className="h-5 w-5 text-[#25D366]" />
                 <a href="mailto:support@example.com" className="text-muted-foreground hover:text-foreground">
                   support@example.com
                 </a>
               </div>
               <div className="flex items-center gap-2 justify-center md:justify-start">
-                <Globe className="h-5 w-5 text-[#2CB67D]" />
+                <Globe className="h-5 w-5 text-[#25D366]" />
                 <a 
                   href="https://superbtools.pro/privacy-policy" 
                   className="text-muted-foreground hover:text-foreground"
@@ -129,7 +129,7 @@ const Index = () => {
                 </a>
               </div>
               <div className="flex items-center gap-2 justify-center md:justify-start">
-                <Globe className="h-5 w-5 text-[#2CB67D]" />
+                <Globe className="h-5 w-5 text-[#25D366]" />
                 <a 
                   href="https://superbtools.pro/terms-of-service" 
                   className="text-muted-foreground hover:text-foreground"
