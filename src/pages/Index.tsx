@@ -29,7 +29,7 @@ const Index = () => {
               </Button>
             </a>
             <p className="mt-4 md:mt-6 text-base md:text-lg text-muted-foreground">
-              Free to try, no credit card needed
+              Free to try, no credit card needed.
             </p>
           </motion.div>
           <motion.div initial={{
