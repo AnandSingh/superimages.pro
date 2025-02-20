@@ -410,8 +410,6 @@ async function getCreditsMessage(userId: string): Promise<string> {
 
 Each image generation costs 1 credit.${balance === 0 ? `
 
-To purchase more credits, start with our ${cheapestProduct?.name} (${cheapestProduct?.credits_amount} credits) for $${(cheapestProduct?.price || 0) / 100}.` : ''}
-
 Send "buy credits" to see available packages.`;
 }
 
