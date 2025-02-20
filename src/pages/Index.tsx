@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import WhatsAppMockup from "@/components/WhatsAppMockup";
 import { Button } from "@/components/ui/button";
 import { Mail, Globe } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const Index = () => {
   return (
@@ -118,24 +119,21 @@ const Index = () => {
               </div>
               <div className="flex items-center gap-2 justify-center md:justify-start">
                 <Globe className="h-5 w-5 text-[#25D366]" />
-                <a 
-                  href="https://superbtools.pro/privacy-policy" 
+                <Link 
+                  to="/privacy-policy" 
                   className="text-muted-foreground hover:text-foreground"
-                  target="_blank"
                 >
                   Privacy Policy
-                </a>
+                </Link>
               </div>
               <div className="flex items-center gap-2 justify-center md:justify-start">
                 <Globe className="h-5 w-5 text-[#25D366]" />
-                <a 
-                  href="https://superbtools.pro/terms-of-service" 
+                <Link 
+                  to="/terms-of-service" 
                   className="text-muted-foreground hover:text-foreground"
-                  target="_blank"
-                  rel="noopener noreferrer"
                 >
                   Terms of Service
-                </a>
+                </Link>
               </div>
               <p className="text-sm text-muted-foreground pt-4">
                 © 2024 Superb. All rights reserved.
