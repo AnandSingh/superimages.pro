@@ -9,17 +9,17 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
       <section className="container mx-auto px-4 lg:px-24 py-8 md:py-12 min-h-[95vh] flex items-center">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center max-w-[1400px] mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-12 items-center max-w-[1400px] mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className="text-center md:text-left"
           >
-            <h1 className="text-5xl leading-[1.1] md:text-8xl font-bold text-foreground mb-6 md:mb-8 md:leading-tight">
+            <h1 className="text-5xl leading-none md:leading-tight md:text-8xl font-bold text-foreground mb-4 md:mb-8">
               Create Images in WhatsApp
             </h1>
-            <p className="text-lg md:text-3xl text-muted-foreground mb-8 md:mb-10">
+            <p className="text-lg leading-snug md:leading-normal md:text-3xl text-muted-foreground mb-6 md:mb-10">
               Just say what you want, and it's ready in seconds!
             </p>
             <a 
@@ -47,7 +47,7 @@ const Index = () => {
             <img 
               src="https://s3.gifyu.com/images/bSkqc.gif" 
               alt="WhatsApp AI Demo"
-              className="w-full max-w-[600px] md:max-w-[500px]"
+              className="w-full max-w-[800px] md:max-w-[500px]"
             />
           </motion.div>
         </div>
