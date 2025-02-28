@@ -593,7 +593,7 @@ serve(async (req) => {
     )
 
     const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
 
     if (req.method === 'POST') {
       const body = await req.json()
