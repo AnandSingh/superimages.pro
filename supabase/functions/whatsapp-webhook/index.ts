@@ -1,6 +1,6 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3"
 import Replicate from "https://esm.sh/replicate@0.25.2"
 
 const corsHeaders = {
@@ -410,7 +410,7 @@ async function getCreditsMessage(userId: string): Promise<string> {
 
 Each image generation costs 1 credit.${balance === 0 ? `
 
-Send "buy credits" to see available packages.`;
+Send "buy credits" to see available packages.` : ''}`;
 }
 
 async function getDynamicCreditsGuide(): Promise<string> {
@@ -551,6 +551,51 @@ async function handleOnboarding(supabase: any, userId: string, userMessage: stri
   return null;
 }
 
+// New function to work with OpenAI instead of Gemini
+async function generateWithOpenAI(prompt: string, systemPrompt: string): Promise<string> {
+  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  
+  if (!openAIApiKey) {
+    console.error('OPENAI_API_KEY is not set');
+    throw new Error('OpenAI API key is not configured');
+  }
+  
+  try {
+    console.log(`Sending prompt to OpenAI: "${prompt.substring(0, 100)}..."`);
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('OpenAI API error:', errorData);
+      throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log('OpenAI response:', data);
+    
+    return data.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('Error in generateWithOpenAI:', error);
+    throw error;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -591,9 +636,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
-
-    const genAI = new GoogleGenerativeAI(Deno.env.get('GEMINI_API_KEY') ?? "");
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
 
     if (req.method === 'POST') {
       const body = await req.json()
@@ -756,18 +798,14 @@ serve(async (req) => {
               });
             }
 
-            // Optimize the prompt using the new format
-            const promptOptimizationPrompt = `${IMAGE_OPTIMIZATION_PROMPT}
-
-Input: "${promptText}"`;
-
-            console.log('Optimizing prompt with AI...', promptText);
+            // Optimize the prompt using OpenAI instead of Gemini
+            console.log('Optimizing prompt with OpenAI...', promptText);
             
-            const promptResult = await model.generateContent({
-              contents: [{ parts: [{ text: promptOptimizationPrompt }] }]
-            });
+            const optimizedPrompt = await generateWithOpenAI(
+              promptText,
+              IMAGE_OPTIMIZATION_PROMPT
+            );
             
-            const optimizedPrompt = promptResult.response.text().trim();
             console.log('Optimized prompt:', optimizedPrompt);
 
             const { error: contextError } = await supabase
@@ -892,60 +930,52 @@ Input: "${promptText}"`;
             }
           }
 
-          const prompt = `You are a helpful WhatsApp business assistant. Use the conversation history below to maintain context and guide users to the correct commands. Do not add any prefixes to your responses.
-
-Previous conversation:
+          // Use OpenAI for general conversation instead of Gemini
+          const prompt = `Previous conversation:
 ${conversationHistory}
 
 Current message:
-User: ${message.text.body}
+User: ${message.text.body}`;
 
-${CHAT_SYSTEM_PROMPT}
+          try {
+            const aiResponse = await generateWithOpenAI(prompt, CHAT_SYSTEM_PROMPT);
+            console.log('OpenAI generated response:', aiResponse);
 
-Important:
-1. First understand what the user wants (checking balance, buying credits, or creating images)
-2. Then guide them to the exact command they should use
-3. Keep responses concise and friendly
-4. Never invent features or make up information
-5. Do not add any prefix to your responses - just provide the response directly`;
+            // Send the AI response
+            const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse);
+            
+            // After any regular conversation, send the image guide
+            await sendWhatsAppMessage(
+              sender.wa_id,
+              "Tip: Use commands like 'make', 'create', or 'generate' to make images. To check credits, use 'balance' or 'credits'"
+            );
+            
+            const aiMessageData = {
+              whatsapp_message_id: whatsappResponse.messages[0].id,
+              user_id: currentUserData.id,
+              direction: 'outgoing',
+              message_type: 'text',
+              content: { text: aiResponse },
+              status: 'sent',
+              created_at: new Date().toISOString()
+            };
 
-          const result = await model.generateContent({
-            contents: [{
-              parts: [{ text: prompt }]
-            }]
-          });
-          
-          const response = await result.response;
-          const aiResponse = response.text();
-          
-          console.log('AI generated response:', aiResponse);
+            const { error: aiMessageError } = await supabase
+              .from('messages')
+              .insert(aiMessageData);
 
-          // Send the AI response
-          const whatsappResponse = await sendWhatsAppMessage(sender.wa_id, aiResponse);
-          
-          // After any regular conversation, send the image guide
-          await sendWhatsAppMessage(
-            sender.wa_id,
-            "Tip: Use commands like 'make', 'create', or 'generate' to make images. To check credits, use 'balance' or 'credits'"
-          );
-          
-          const aiMessageData = {
-            whatsapp_message_id: whatsappResponse.messages[0].id,
-            user_id: currentUserData.id,
-            direction: 'outgoing',
-            message_type: 'text',
-            content: { text: aiResponse },
-            status: 'sent',
-            created_at: new Date().toISOString()
-          }
-
-          const { error: aiMessageError } = await supabase
-            .from('messages')
-            .insert(aiMessageData)
-
-          if (aiMessageError) {
-            console.error('Error storing AI message:', aiMessageError)
-            throw aiMessageError
+            if (aiMessageError) {
+              console.error('Error storing AI message:', aiMessageError);
+              throw aiMessageError;
+            }
+          } catch (error) {
+            console.error('Error in OpenAI conversation:', error);
+            
+            // Fallback message if OpenAI fails
+            await sendWhatsAppMessage(
+              sender.wa_id,
+              "I'm sorry, I'm having trouble understanding right now. Try using keywords like 'show me' or 'create' to generate images."
+            );
           }
         }
       }
