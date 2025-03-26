@@ -54,7 +54,7 @@ const greetingKeywords = [
   'hi',
   'hello',
   'hey',
-  'hola',
+  'hey',
   'greetings',
   'good morning',
   'good afternoon',
