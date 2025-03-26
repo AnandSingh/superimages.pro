@@ -490,7 +490,7 @@ For example:
 "Show me a sunset"
 "Generate a sci-fi city"
 "I want a picture of mountains"
-"Make me a fantasy castle"
+"Make me a cheesecake"
 
 Try it now! What would you like me to create?`;
 
