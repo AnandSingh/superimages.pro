@@ -46,7 +46,7 @@ const buyCreditsKeywords = [
   'fees',
   'cost of credits',
   'price per credit',
-  'credit fee',
+  'credit price',
   'what is the cost'
 ];
 
