@@ -100,7 +100,7 @@ const Index = () => {
             <div className="space-y-4 text-center md:text-left">
               <div className="flex items-center gap-2 justify-center md:justify-start">
                 <Mail className="h-5 w-5 text-[#25D366]" />
-                <a href="mailto:support@superbtools.pro" className="text-muted-foreground hover:text-foreground">
+                <a href="mailto:mail.hackchefs@gmail.com" className="text-muted-foreground hover:text-foreground">
                   support@superbtools.pro
                 </a>
               </div>
